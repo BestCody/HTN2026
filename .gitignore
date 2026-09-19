@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Fusion 360 auto-backup
+*.f3d.bak

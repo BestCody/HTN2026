@@ -1,0 +1,47 @@
+# Runtime configuration for the arm controller.
+# Angles are in degrees. Pulse widths are microseconds at 50 Hz.
+# Calibrate min_us / max_us per servo with `arm-calibrate` before loading the arm.
+
+i2c_address: 0x40
+pwm_frequency: 50
+
+# How often the control loop writes to the PCA9685.
+control_rate_hz: 50
+# How often server state is broadcast to connected websocket clients.
+broadcast_rate_hz: 20
+# Maximum joint speed. Targets are rate-limited toward this ceiling.
+max_deg_per_sec: 120
+
+joints:
+  base:
+    channel: 0
+    min_deg: 0
+    max_deg: 180
+    home_deg: 90
+    min_us: 500
+    max_us: 2500
+    invert: false
+  shoulder:
+    channel: 1
+    min_deg: 20
+    max_deg: 160
+    home_deg: 90
+    min_us: 500
+    max_us: 2500
+    invert: false
+  elbow:
+    channel: 2
+    min_deg: 20
+    max_deg: 160
+    home_deg: 90
+    min_us: 500
+    max_us: 2500
+    invert: false
+  gripper:
+    channel: 3
+    min_deg: 0
+    max_deg: 90
+    home_deg: 30
+    min_us: 500
+    max_us: 2500
+    invert: false

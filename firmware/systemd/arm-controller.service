@@ -1,0 +1,16 @@
+[Unit]
+Description=4-DOF Arm Controller (FastAPI + PCA9685)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/HTN2026/firmware
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/pi/HTN2026/firmware/.venv/bin/arm-controller --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

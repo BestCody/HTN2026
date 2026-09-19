@@ -1,0 +1,211 @@
+{
+  "source_document": "htn nlp arm",
+  "camera_parts_included": false,
+  "obsolete_hidden_parts_included": false,
+  "part_count": 29,
+  "parts": [
+    {
+      "part": "P26_Base_servo_mount",
+      "group": "01",
+      "file": "STL/P26_Base_servo_mount.stl",
+      "solid_volume_cm3": 5.259905511396014,
+      "suggested_print_axis": "Y"
+    },
+    {
+      "part": "P01_Base_cradle_XZ",
+      "group": "01",
+      "file": "STL/P01_Base_cradle_XZ.stl",
+      "solid_volume_cm3": 161.03767833801317,
+      "suggested_print_axis": "Y"
+    },
+    {
+      "part": "P02_Yaw_rotor",
+      "group": "02",
+      "file": "STL/P02_Yaw_rotor.stl",
+      "solid_volume_cm3": 36.37949131011712,
+      "suggested_print_axis": "-Y"
+    },
+    {
+      "part": "P03_Shoulder_servo_upright",
+      "group": "02",
+      "file": "STL/P03_Shoulder_servo_upright.stl",
+      "solid_volume_cm3": 9.024539133547005,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "P04_Shoulder_idler_upright",
+      "group": "02",
+      "file": "STL/P04_Shoulder_idler_upright.stl",
+      "solid_volume_cm3": 7.363598089845225,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "P05_Turret_rounded_clamp_foot",
+      "group": "02",
+      "file": "STL/P05_Turret_rounded_clamp_foot.stl",
+      "solid_volume_cm3": 3.037497289098673,
+      "suggested_print_axis": "X"
+    },
+    {
+      "part": "P06_Turret_rounded_clamp_foot",
+      "group": "02",
+      "file": "STL/P06_Turret_rounded_clamp_foot.stl",
+      "solid_volume_cm3": 3.037497289098676,
+      "suggested_print_axis": "X"
+    },
+    {
+      "part": "P07_Turret_rounded_clamp_foot",
+      "group": "02",
+      "file": "STL/P07_Turret_rounded_clamp_foot.stl",
+      "solid_volume_cm3": 3.0374972890986744,
+      "suggested_print_axis": "X"
+    },
+    {
+      "part": "P08_Turret_rounded_clamp_foot",
+      "group": "02",
+      "file": "STL/P08_Turret_rounded_clamp_foot.stl",
+      "solid_volume_cm3": 3.037497289098674,
+      "suggested_print_axis": "X"
+    },
+    {
+      "part": "P09_Shoulder_axle_bushing",
+      "group": "02",
+      "file": "STL/P09_Shoulder_axle_bushing.stl",
+      "solid_volume_cm3": 0.3721342161883407,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "STAR_yaw_SEATED_bridge",
+      "group": "02",
+      "file": "STL/STAR_yaw_SEATED_bridge.stl",
+      "solid_volume_cm3": 4.7414414928231645,
+      "suggested_print_axis": null
+    },
+    {
+      "part": "P10_Upper_front_servo_plate",
+      "group": "03",
+      "file": "STL/P10_Upper_front_servo_plate.stl",
+      "solid_volume_cm3": 13.342071165452563,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "P11_Upper_rear_plate",
+      "group": "03",
+      "file": "STL/P11_Upper_rear_plate.stl",
+      "solid_volume_cm3": 13.100458694975673,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "P14_Elbow_idler_standoff",
+      "group": "03",
+      "file": "STL/P14_Elbow_idler_standoff.stl",
+      "solid_volume_cm3": 1.8345016141371437,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "P15_Elbow_axle_bushing",
+      "group": "03",
+      "file": "STL/P15_Elbow_axle_bushing.stl",
+      "solid_volume_cm3": 0.4623293412729087,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "STAR_shoulder_SEATED_bridge",
+      "group": "03",
+      "file": "STL/STAR_shoulder_SEATED_bridge.stl",
+      "solid_volume_cm3": 6.051137231390336,
+      "suggested_print_axis": null
+    },
+    {
+      "part": "P12_Upper_spacer_for_STAR",
+      "group": "03",
+      "file": "STL/P12_Upper_spacer_for_STAR.stl",
+      "solid_volume_cm3": 2.655625969191182,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "P13_Upper_spacer_for_STAR",
+      "group": "03",
+      "file": "STL/P13_Upper_spacer_for_STAR.stl",
+      "solid_volume_cm3": 2.655625969191182,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "P17_Forearm_rear",
+      "group": "04",
+      "file": "STL/P17_Forearm_rear.stl",
+      "solid_volume_cm3": 11.04998632309642,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "STAR_elbow_SEATED_bridge",
+      "group": "04",
+      "file": "STL/STAR_elbow_SEATED_bridge.stl",
+      "solid_volume_cm3": 5.5675484301608265,
+      "suggested_print_axis": null
+    },
+    {
+      "part": "P38_Pivot_mount_and_axle",
+      "group": "04",
+      "file": "STL/P38_Pivot_mount_and_axle.stl",
+      "solid_volume_cm3": 14.64683110436099,
+      "suggested_print_axis": null
+    },
+    {
+      "part": "P16_Forearm_front",
+      "group": "04",
+      "file": "STL/P16_Forearm_front.stl",
+      "solid_volume_cm3": 11.44251573864084,
+      "suggested_print_axis": null
+    },
+    {
+      "part": "P20_Gripper_servo_tray",
+      "group": "04",
+      "file": "STL/P20_Gripper_servo_tray.stl",
+      "solid_volume_cm3": 5.633446641386011,
+      "suggested_print_axis": null
+    },
+    {
+      "part": "P37_Pivot_follower_jaw",
+      "group": "04",
+      "file": "STL/P37_Pivot_follower_jaw.stl",
+      "solid_volume_cm3": 15.516761457299875,
+      "suggested_print_axis": null
+    },
+    {
+      "part": "P39_Pivot_axle_keeper",
+      "group": "04",
+      "file": "STL/P39_Pivot_axle_keeper.stl",
+      "solid_volume_cm3": 6.5428600668156705,
+      "suggested_print_axis": null
+    },
+    {
+      "part": "P18_Forearm_spacer_for_STAR",
+      "group": "04",
+      "file": "STL/P18_Forearm_spacer_for_STAR.stl",
+      "solid_volume_cm3": 2.6059636725232362,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "P19_Forearm_spacer_for_STAR",
+      "group": "04",
+      "file": "STL/P19_Forearm_spacer_for_STAR.stl",
+      "solid_volume_cm3": 2.6059636725232362,
+      "suggested_print_axis": "Z"
+    },
+    {
+      "part": "P36_Pivot_driver_jaw",
+      "group": "05",
+      "file": "STL/P36_Pivot_driver_jaw.stl",
+      "solid_volume_cm3": 18.643654111449678,
+      "suggested_print_axis": "Y"
+    },
+    {
+      "part": "P41_Pivot_horn_retainer",
+      "group": "05",
+      "file": "STL/P41_Pivot_horn_retainer.stl",
+      "solid_volume_cm3": 2.499318400810151,
+      "suggested_print_axis": "Y"
+    }
+  ]
+}

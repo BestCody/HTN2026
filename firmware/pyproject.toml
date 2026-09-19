@@ -1,0 +1,29 @@
+[project]
+name = "arm-controller"
+version = "0.1.0"
+description = "Raspberry Pi controller for a 4-DOF robotic arm driven by a PCA9685."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+pi = [
+    "adafruit-circuitpython-servokit>=1.3.19",
+    "adafruit-blinka>=8.0",
+]
+
+[project.scripts]
+arm-controller = "arm_controller.main:run"
+arm-calibrate = "arm_controller.calibrate:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["arm_controller*"]
