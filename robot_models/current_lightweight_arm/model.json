@@ -1,0 +1,127 @@
+{
+  "schema_version": 4,
+  "model_id": "current-lightweight-arm-v1",
+  "source_file": "../../Current_Lightweight_Arm.f3d",
+  "source_sha256": "23eb62682a7ab3bf087719e6c215848484483c6941b31b7f69b02d8190699b0d",
+  "servo_model": "MG996R",
+  "servo_count": 4,
+  "payload_limit_kg": 0.05,
+  "coordinate_frame": {
+    "ground_plane": "XZ",
+    "up_axis": "Y"
+  },
+  "components": [
+    "01_FIXED_BASE",
+    "02_YAW_TURRET",
+    "03_UPPER_LINK",
+    "04_FOREARM_HEAD",
+    "05_MOVING_FINGER"
+  ],
+  "joints": [
+    {
+      "name": "J1_BASE_YAW",
+      "role": "kinematic",
+      "axis": [0.0, 1.0, 0.0],
+      "lower_deg": -65.0,
+      "upper_deg": 65.0,
+      "home_deg": 0.0,
+      "origin_m": null,
+      "max_velocity_deg_s": null
+    },
+    {
+      "name": "J2_SHOULDER",
+      "role": "kinematic",
+      "axis": [0.0, 0.0, 1.0],
+      "lower_deg": -30.0,
+      "upper_deg": 45.0,
+      "home_deg": 0.0,
+      "servo_home_deg": 65.0,
+      "origin_m": null,
+      "max_velocity_deg_s": null
+    },
+    {
+      "name": "J3_ELBOW",
+      "role": "kinematic",
+      "axis": [0.0, 0.0, 1.0],
+      "lower_deg": -70.0,
+      "upper_deg": 30.0,
+      "home_deg": 0.0,
+      "servo_home_deg": -85.0,
+      "origin_m": null,
+      "max_velocity_deg_s": null
+    },
+    {
+      "name": "J4_GRIPPER",
+      "role": "gripper",
+      "axis": [0.0, 1.0, 0.0],
+      "lower_deg": -6.0,
+      "upper_deg": 13.0,
+      "home_deg": 0.0,
+      "origin_m": null,
+      "max_velocity_deg_s": null
+    }
+  ],
+  "geometry": {
+    "upper_arm_m": null,
+    "forearm_m": null,
+    "shoulder_height_m": null
+  },
+  "bimanual_mount": {
+    "shoulder_offset_m": null
+  },
+  "control_limits": {
+    "trajectory_frequency_hz": null,
+    "required_clearance_m": null,
+    "max_gripper_width_m": null,
+    "max_gripper_velocity_m_s": null,
+    "max_gripper_force_n": null,
+    "controller_timeout_margin_s": null
+  },
+  "safety_limits": {
+    "max_slip_probability": null,
+    "max_collision_probability": null,
+    "min_grasp_stability_score": null
+  },
+  "servo_controller": {
+    "type": "pca9685",
+    "i2c_address": null,
+    "reference_clock_hz": null,
+    "pwm_frequency_hz": null,
+    "servo_supply_voltage": 6.0,
+    "servo_supply_current_a": 10.0,
+    "servo_power_validated": false,
+    "output_enable_validated": false,
+    "arm_installations": {
+      "left": {"physical_id": "arm_1", "installed": true},
+      "right": {"physical_id": "arm_2", "installed": false}
+    },
+    "actuators": {
+      "left": {
+        "J1_BASE_YAW": {"channel": 0, "pulse_at_lower_us": null, "pulse_at_upper_us": null},
+        "J2_SHOULDER": {"channel": 1, "pulse_at_lower_us": null, "pulse_at_upper_us": null},
+        "J3_ELBOW": {"channel": 2, "pulse_at_lower_us": null, "pulse_at_upper_us": null},
+        "J4_GRIPPER": {"channel": 3, "pulse_at_lower_us": null, "pulse_at_upper_us": null}
+      },
+      "right": {
+        "J1_BASE_YAW": {"channel": null, "pulse_at_lower_us": null, "pulse_at_upper_us": null},
+        "J2_SHOULDER": {"channel": null, "pulse_at_lower_us": null, "pulse_at_upper_us": null},
+        "J3_ELBOW": {"channel": null, "pulse_at_lower_us": null, "pulse_at_upper_us": null},
+        "J4_GRIPPER": {"channel": null, "pulse_at_lower_us": null, "pulse_at_upper_us": null}
+      }
+    }
+  },
+  "meshes": {},
+  "mesh_scale_to_m": null,
+  "calibration_complete": false,
+  "kinematics_validated": false,
+  "collision_geometry_validated": false,
+  "actuator_mapping_validated": false,
+  "payload_validated": false,
+  "blockers": [
+    "Futaba FSH-6S horn dimensions are approximate and physical fit is unverified",
+    "24T module-2 gear pair is marked CAD verification pending",
+    "drive-pin fastener retention is not finalized",
+    "50 g payload target is pending physical validation",
+    "joint origins and link lengths still require a Fusion API export"
+  ]
+}

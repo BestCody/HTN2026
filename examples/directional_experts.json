@@ -1,0 +1,14 @@
+{
+  "experts": [
+    {
+      "id": "left",
+      "simple": "Move the robot to the left along a horizontal line.",
+      "abstract": "Decrease horizontal position to reach a lower coordinate."
+    },
+    {
+      "id": "right",
+      "simple": "Move the robot to the right along a horizontal line.",
+      "abstract": "Increase horizontal position to reach a higher coordinate."
+    }
+  ]
+}

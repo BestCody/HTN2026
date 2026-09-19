@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "moira-robotics"
+version = "0.1.0"
+description = "Modular instruction routing and specialist policy serving for robotics"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+embeddings = ["sentence-transformers>=3.4,<6"]
+prompt = ["transformers>=4.56,<6", "torch>=2.6,<3"]
+adapters = ["peft>=0.15,<1", "torch>=2.6,<3"]
+hardware = ["Adafruit-Blinka>=9,<10", "adafruit-circuitpython-pca9685>=3.4.22,<4"]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[project.scripts]
+moira = "moira.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+moira = ["data/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: optional ML-library integration tests",
+    "e2e: opt-in full pipeline tests using downloaded pretrained routing models",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

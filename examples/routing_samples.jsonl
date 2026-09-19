@@ -1,0 +1,4 @@
+{"instruction":"Pick up the black bowl between the plate and the ramekin.","expert_id":"spatial"}
+{"instruction":"Pick up the bowl to the right of the cup.","expert_id":"spatial"}
+{"instruction":"Open the top drawer.","expert_id":"goal"}
+{"instruction":"Turn on the stove.","expert_id":"goal"}

@@ -1,0 +1,14 @@
+{
+  "experts": [
+    {
+      "id": "spatial",
+      "simple": "Pick up and place objects specified by spatial position: the left or right bowl, behind a plate, between objects, or next to a cup.",
+      "abstract": "Resolve spatial relationships between similar objects and manipulate the object identified by its relative position."
+    },
+    {
+      "id": "goal",
+      "simple": "Open or close a drawer, turn on a stove, put a bowl on a plate, or put an object inside a cabinet to reach the requested goal.",
+      "abstract": "Achieve a specified end state by changing an object's placement or an articulated fixture's state."
+    }
+  ]
+}
