@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -14,6 +15,9 @@ class JointConfig(BaseModel):
     min_us: int = Field(ge=100, le=3000)
     max_us: int = Field(ge=100, le=3000)
     invert: bool = False
+    mode: Literal["position", "continuous"] = "position"
+    neutral_us: int = Field(default=1500, ge=100, le=3000)
+    max_speed_us: int = Field(default=250, ge=1, le=1000)
 
     @field_validator("max_deg")
     @classmethod

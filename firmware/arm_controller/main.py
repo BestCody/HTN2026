@@ -56,6 +56,8 @@ def _snapshot_payload(state: ArmState) -> dict[str, Any]:
         "current": snap.current,
         "target": snap.target,
         "limits": {k: list(v) for k, v in snap.limits.items()},
+        "modes": snap.modes,
+        "speeds": snap.speeds,
     }
 
 
@@ -114,6 +116,7 @@ def create_app(config_path: Path) -> FastAPI:
                         "min_deg": j.min_deg,
                         "max_deg": j.max_deg,
                         "home_deg": j.home_deg,
+                        "mode": j.mode,
                     }
                     for name, j in config.joints.items()
                 },
@@ -166,6 +169,14 @@ async def _handle_message(raw: str, state: ArmState) -> None:
         if isinstance(joints, dict):
             cleaned = {k: float(v) for k, v in joints.items() if isinstance(v, (int, float))}
             await state.set_targets(cleaned)
+    elif kind == "set_speed":
+        joint = msg.get("joint")
+        speed = msg.get("speed")
+        if isinstance(joint, str) and isinstance(speed, (int, float)):
+            try:
+                await state.set_speed(joint, float(speed))
+            except (KeyError, ValueError):
+                log.warning("invalid speed request: %s %r", joint, speed)
     elif kind == "home":
         await state.home()
     elif kind == "set_enabled":

@@ -21,6 +21,9 @@ joints:
     min_us: 500
     max_us: 2500
     invert: false
+    mode: continuous
+    neutral_us: 1500
+    max_speed_us: 250
   shoulder:
     channel: 1
     min_deg: 20
@@ -29,6 +32,9 @@ joints:
     min_us: 500
     max_us: 2500
     invert: false
+    mode: continuous
+    neutral_us: 1500
+    max_speed_us: 250
   elbow:
     channel: 2
     min_deg: 20
@@ -37,6 +43,9 @@ joints:
     min_us: 500
     max_us: 2500
     invert: false
+    mode: continuous
+    neutral_us: 1500
+    max_speed_us: 250
   gripper:
     channel: 3
     min_deg: 0
@@ -45,3 +54,6 @@ joints:
     min_us: 500
     max_us: 2500
     invert: false
+    mode: continuous
+    neutral_us: 1500
+    max_speed_us: 250

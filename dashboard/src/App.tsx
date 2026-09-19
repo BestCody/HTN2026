@@ -9,8 +9,9 @@ function defaultWsUrl(): string {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) return saved;
   const host = window.location.hostname || "arm.local";
+  const controllerHost = host === "localhost" || host === "127.0.0.1" ? "arm.local" : host;
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${proto}://${host}:8000/ws`;
+  return `${proto}://${controllerHost}:8000/ws`;
 }
 
 export default function App() {

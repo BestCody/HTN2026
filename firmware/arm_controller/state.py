@@ -27,6 +27,8 @@ class ArmSnapshot:
     current: dict[str, float]
     target: dict[str, float]
     limits: dict[str, tuple[float, float]] = field(default_factory=dict)
+    modes: dict[str, str] = field(default_factory=dict)
+    speeds: dict[str, float] = field(default_factory=dict)
 
 
 class ArmState:
@@ -40,9 +42,14 @@ class ArmState:
             name: joint.home_deg for name, joint in config.joints.items()
         }
         self._target: dict[str, float] = dict(self._current)
+        self._speed: dict[str, float] = {name: 0.0 for name in config.joints}
         self._lock = asyncio.Lock()
         self._last_tick = time.monotonic()
         self._dirty = True
+        # A PCA9685 can retain its last duty cycle across a controller restart.
+        # Start safely: no joint is driven until the user explicitly enables it.
+        for joint in config.joints.values():
+            self._driver.release(joint.channel)
 
     @property
     def enabled(self) -> bool:
@@ -56,8 +63,21 @@ class ArmState:
             if not enabled:
                 for joint in self._config.joints.values():
                     self._driver.release(joint.channel)
+                for name in self._speed:
+                    self._speed[name] = 0.0
             else:
                 self._dirty = True
+
+    async def set_speed(self, joint_name: str, speed_percent: float) -> None:
+        """Set a continuous servo's signed speed from -100 to 100 percent."""
+        cfg = self._config.joints.get(joint_name)
+        if cfg is None:
+            raise KeyError(f"unknown joint: {joint_name}")
+        if cfg.mode != "continuous":
+            raise ValueError(f"joint is not continuous: {joint_name}")
+        async with self._lock:
+            self._speed[joint_name] = _clamp(speed_percent, -100.0, 100.0)
+            self._dirty = True
 
     async def set_target(self, joint_name: str, degrees: float) -> None:
         cfg = self._config.joints.get(joint_name)
@@ -88,6 +108,8 @@ class ArmState:
             current=dict(self._current),
             target=dict(self._target),
             limits={n: (c.min_deg, c.max_deg) for n, c in self._config.joints.items()},
+            modes={n: c.mode for n, c in self._config.joints.items()},
+            speeds=dict(self._speed),
         )
 
     async def tick(self) -> None:
@@ -101,6 +123,14 @@ class ArmState:
         async with self._lock:
             moved = False
             for name, cfg in self._config.joints.items():
+                if cfg.mode == "continuous":
+                    speed = self._speed[name]
+                    if cfg.invert:
+                        speed = -speed
+                    pulse = cfg.neutral_us + speed / 100 * cfg.max_speed_us
+                    self._driver.write_us(cfg.channel, pulse)
+                    moved = True
+                    continue
                 cur = self._current[name]
                 tgt = self._target[name]
                 delta = tgt - cur

@@ -7,10 +7,13 @@ export interface ArmSnapshot {
   current: Record<JointName, number>;
   target: Record<JointName, number>;
   limits: Record<JointName, [number, number]>;
+  modes?: Record<JointName, "position" | "continuous">;
+  speeds?: Record<JointName, number>;
 }
 
 export type OutgoingMessage =
   | { type: "set_target"; joint: JointName; degrees: number }
   | { type: "set_targets"; joints: Record<JointName, number> }
+  | { type: "set_speed"; joint: JointName; speed: number }
   | { type: "home" }
   | { type: "set_enabled"; enabled: boolean };
