@@ -19,6 +19,8 @@ class Expert:
     simple: str
     abstract: str
     adapter_path: str | None = None
+    interfaces: tuple[str, ...] = ("general",)
+    routing_examples: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for field in ("id", "simple", "abstract"):
@@ -29,11 +31,36 @@ class Expert:
             not isinstance(self.adapter_path, str) or not self.adapter_path.strip()
         ):
             raise ValueError("adapter_path must be a non-empty string or null")
+        if isinstance(self.interfaces, list):
+            object.__setattr__(self, "interfaces", tuple(self.interfaces))
+        if (
+            not isinstance(self.interfaces, tuple)
+            or not self.interfaces
+            or any(not isinstance(value, str) or not value.strip() for value in self.interfaces)
+            or len(set(self.interfaces)) != len(self.interfaces)
+        ):
+            raise ValueError("interfaces must contain unique non-empty strings")
+        if isinstance(self.routing_examples, list):
+            object.__setattr__(self, "routing_examples", tuple(self.routing_examples))
+        if (
+            not isinstance(self.routing_examples, tuple)
+            or any(
+                not isinstance(value, str) or not value.strip()
+                for value in self.routing_examples
+            )
+            or len(set(self.routing_examples)) != len(self.routing_examples)
+            or len(self.routing_examples) > 16
+        ):
+            raise ValueError("routing_examples must contain at most 16 unique non-empty strings")
 
     def description(self, style: DescriptionStyle) -> str:
         if style not in ("simple", "abstract"):
             raise ValueError(f"Unknown description style: {style}")
         return getattr(self, style)
+
+    def routing_texts(self, style: DescriptionStyle) -> tuple[str, ...]:
+        """Return the description plus optional metadata examples."""
+        return (self.description(style), *self.routing_examples)
 
 
 class ExpertRegistry:
@@ -80,6 +107,20 @@ class ExpertRegistry:
     def snapshot(self) -> tuple[Expert, ...]:
         with self._lock:
             return tuple(self._experts.values())
+
+    def for_interface(self, interface: str) -> ExpertRegistry:
+        """Return the experts that satisfy one caller-defined compatibility contract.
+
+        Interfaces constrain schemas or execution roles; they do not encode a
+        task-to-expert route. The semantic router still ranks every compatible
+        expert from its natural-language description.
+        """
+        if not isinstance(interface, str) or not interface.strip():
+            raise ValueError("interface must be a non-empty string")
+        experts = tuple(expert for expert in self.snapshot() if interface in expert.interfaces)
+        if not experts:
+            raise LookupError(f"No experts provide interface: {interface}")
+        return ExpertRegistry(experts)
 
     @contextmanager
     def locked(self) -> Iterator[None]:

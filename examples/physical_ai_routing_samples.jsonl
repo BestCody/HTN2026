@@ -1,0 +1,60 @@
+{"instruction":"Find every object on the table and report its position in the camera view.","expert_id":"baseten-vision-scene"}
+{"instruction":"Segment the cup, block, person, and obstacles in this image and construct a scene map.","expert_id":"baseten-vision-scene"}
+{"instruction":"Turn these webcam frames into labeled objects, surfaces, and spatial coordinates.","expert_id":"baseten-vision-scene"}
+{"instruction":"Suggest a stable six-axis gripper pose for picking up the detected bottle.","expert_id":"baseten-grasp-pose"}
+{"instruction":"Where should the end effector contact this object so it can be lifted without collision?","expert_id":"baseten-grasp-pose"}
+{"instruction":"Produce candidate grasp transforms for the target object's observed geometry.","expert_id":"baseten-grasp-pose"}
+{"instruction":"Convert this microphone recording into the words the user spoke.","expert_id":"baseten-stt"}
+{"instruction":"Transcribe the incoming voice waveform without deciding what action it requests.","expert_id":"baseten-stt"}
+{"instruction":"Write down the spoken command contained in this audio clip.","expert_id":"baseten-stt"}
+{"instruction":"Resolve what 'bring me that one' refers to using the transcript and visible objects.","expert_id":"baseten-voice-nlp"}
+{"instruction":"Extract the requested action, object, and constraints from this situated utterance.","expert_id":"baseten-voice-nlp"}
+{"instruction":"Ground the user's words to scene object IDs or ask for clarification when ambiguous.","expert_id":"baseten-voice-nlp"}
+{"instruction":"Read this completion response aloud to the user.","expert_id":"baseten-tts"}
+{"instruction":"Generate spoken audio for the clarification question.","expert_id":"baseten-tts"}
+{"instruction":"Turn the assistant's warning text into a natural voice response.","expert_id":"baseten-tts"}
+{"instruction":"Break the grounded request into ordered physical steps and propose several complete plans.","expert_id":"baseten-task-planner"}
+{"instruction":"Choose the best task plan after comparing the simulated outcomes of all candidates.","expert_id":"baseten-task-planner"}
+{"instruction":"Plan how to achieve this goal while respecting the user's accommodation and workspace constraints.","expert_id":"baseten-task-planner"}
+{"instruction":"Generate single-arm waypoint actions to pick up the block and place it in the tray.","expert_id":"baseten-waypoint-policy"}
+{"instruction":"Move this rigid tabletop item from its current pose to the requested destination with one arm.","expert_id":"baseten-waypoint-policy"}
+{"instruction":"Produce bounded reach, grasp, carry, and release action chunks for an ordinary object.","expert_id":"baseten-waypoint-policy"}
+{"instruction":"Have both arms lift the wide object together while sharing its load.","expert_id":"baseten-bimanual-act"}
+{"instruction":"Generate synchronized left and right arm commands to stabilize and carry one item.","expert_id":"baseten-bimanual-act"}
+{"instruction":"Coordinate two manipulators so they reposition this large object without twisting it.","expert_id":"baseten-bimanual-act"}
+{"instruction":"Tilt the source cup and regulate the motion to pour into the destination container.","expert_id":"baseten-pour-policy"}
+{"instruction":"Generate the grasp, controlled pour, and upright return sequence.","expert_id":"baseten-pour-policy"}
+{"instruction":"Transfer liquid between these containers without spilling it.","expert_id":"baseten-pour-policy"}
+{"instruction":"Align the plug with its socket and generate a compliant insertion motion.","expert_id":"baseten-insert-policy"}
+{"instruction":"Place the peg into the matching hole using precision alignment and constrained motion.","expert_id":"baseten-insert-policy"}
+{"instruction":"Generate actions for mating this part with the narrow opening.","expert_id":"baseten-insert-policy"}
+{"instruction":"Open the hinged lid by establishing contact and following its articulated path.","expert_id":"baseten-open-lid-policy"}
+{"instruction":"Generate the manipulation needed to close the drawer completely.","expert_id":"baseten-open-lid-policy"}
+{"instruction":"Unscrew or lift the cap so the container changes from closed to open.","expert_id":"baseten-open-lid-policy"}
+{"instruction":"Present the object to the person and release it only after they take hold.","expert_id":"baseten-handover-policy"}
+{"instruction":"Generate a safe robot-to-human transfer with approach, grip release, and retreat.","expert_id":"baseten-handover-policy"}
+{"instruction":"Receive the item from the user's hand using a human-aware handover motion.","expert_id":"baseten-handover-policy"}
+{"instruction":"Given the current joints and proposed controls, estimate the resulting robot and object state.","expert_id":"baseten-forward-dynamics"}
+{"instruction":"Predict the state transition produced by this candidate action sequence over 2.5 seconds.","expert_id":"baseten-forward-dynamics"}
+{"instruction":"Forecast future joint positions and object poses from state plus action.","expert_id":"baseten-forward-dynamics"}
+{"instruction":"Simulate collisions, clearances, and motion of the solid objects along this trajectory.","expert_id":"baseten-rigid-world"}
+{"instruction":"Predict how rigid bodies and obstacles will move when the arm executes this plan.","expert_id":"baseten-rigid-world"}
+{"instruction":"Evaluate the candidate using non-deformable object physics and support contacts.","expert_id":"baseten-rigid-world"}
+{"instruction":"Estimate contact force, friction, and whether the object will slip from the fingers.","expert_id":"baseten-grasp-contact-world"}
+{"instruction":"Predict whether this proposed grasp remains stable while the arm carries the item.","expert_id":"baseten-grasp-contact-world"}
+{"instruction":"Model gripper-object contact and retention for this grasp trajectory.","expert_id":"baseten-grasp-contact-world"}
+{"instruction":"Forecast load sharing and interference between the two arms during this joint motion.","expert_id":"baseten-bimanual-world"}
+{"instruction":"Predict coupled two-manipulator forces for the synchronized candidate trajectory.","expert_id":"baseten-bimanual-world"}
+{"instruction":"Model how the left and right arms affect one another while jointly carrying the object.","expert_id":"baseten-bimanual-world"}
+{"instruction":"Predict how the liquid will flow as the container tilts.","expert_id":"baseten-deformable-world"}
+{"instruction":"Simulate the changing shape of this cloth, bag, or cable during manipulation.","expert_id":"baseten-deformable-world"}
+{"instruction":"Forecast non-rigid material motion and deformation for the proposed action.","expert_id":"baseten-deformable-world"}
+{"instruction":"Predict where the nearby person may reach or move during the next few seconds.","expert_id":"baseten-human-motion-world"}
+{"instruction":"Forecast human occupancy so the proposed robot path can avoid interference.","expert_id":"baseten-human-motion-world"}
+{"instruction":"Model short-horizon motion of the user standing beside the robot.","expert_id":"baseten-human-motion-world"}
+{"instruction":"Assign a task-progress score to each predicted future and rank goal completion.","expert_id":"baseten-task-reward"}
+{"instruction":"Evaluate the utility of this simulated outcome using success, efficiency, and preferences.","expert_id":"baseten-task-reward"}
+{"instruction":"Score how well the candidate future accomplishes the requested goal.","expert_id":"baseten-task-reward"}
+{"instruction":"Compare the before and after images to confirm that the object reached its destination.","expert_id":"baseten-outcome-verifier"}
+{"instruction":"Determine from post-action camera evidence and telemetry whether execution succeeded.","expert_id":"baseten-outcome-verifier"}
+{"instruction":"Verify that the physical result satisfies the requested task rather than merely completing motion.","expert_id":"baseten-outcome-verifier"}

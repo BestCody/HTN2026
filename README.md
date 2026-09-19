@@ -22,6 +22,27 @@ claim to reproduce the paper's benchmark results.
 The core package has no third-party dependencies. Pretrained routing and LoRA
 training are optional installations.
 
+## GPU training environment
+
+Windows training uses a separate `.venv-training` environment so CUDA and
+robot-learning dependencies do not enlarge or destabilize the Raspberry Pi
+runtime. Create or repair it from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\setup_training_env.ps1
+```
+
+The script installs the verified CUDA 12.8 PyTorch and torchvision builds,
+OpenCV, MuJoCo, Gymnasium, LeRobot with its dataset stack, and a compatible
+FFmpeg 8 shared build for TorchCodec. It finishes by running real CUDA matrix
+multiplication, OpenCV image encoding, MuJoCo stepping, a Gymnasium environment,
+LeRobot ACT/CLI loading, TorchCodec loading, and a MoIRA import. Run the verifier
+directly with:
+
+```powershell
+.\.venv-training\Scripts\python.exe tools\verify_training_env.py
+```
+
 ## Raspberry Pi quick start
 
 On 64-bit Raspberry Pi OS with Python 3.10+, run from the repository root:
@@ -43,40 +64,102 @@ without commanding hardware. See the
 [Pi 4B + Baseten architecture](docs/pi4-baseten-architecture.md) for production
 wiring and deployment contracts.
 
-The supplied Fusion arm is tracked in
-[`robot_models/current_lightweight_arm/model.json`](robot_models/current_lightweight_arm/model.json).
-It is hash-pinned, modeled as three positioning joints plus one gripper actuator,
-and limited to the CAD's unvalidated 50 g payload target. The configuration is
-the single source for link geometry, the Y-up frame, bimanual mounting, gripper
-aperture/force/speed, joint speed, control frequency, clearance, payload, safety
-thresholds, and controller timing. Unknown values remain `null` and prevent
-robot-backed components from being constructed. Run `moira
-robot-model-check robot_models/current_lightweight_arm/model.json
+The active SolidWorks arm is tracked in
+[`robot_models/four_dof_desktop_arm/model.json`](robot_models/four_dof_desktop_arm/model.json).
+It uses MG996R servos at the base and shoulder and SG90 servos at the elbow and
+end effector. The assembly, every CAD dependency, and `Robotic+Arm.3mf` are
+hash-pinned. The 3MF contributes millimetre print geometry but contains
+print-plate placement rather than assembled transforms. The configuration is
+the single source for link geometry, coordinate frame, bimanual mounting,
+gripper limits, joint speed, control frequency, clearance, payload, safety
+thresholds, and controller timing. Values from the retired robot were removed;
+unknown values remain `null` and prevent robot-backed components from being
+constructed. Run `moira
+robot-model-check robot_models/four_dof_desktop_arm/model.json
 --verify-source` to inspect its readiness. Exact Fusion export and calibration
 steps are documented in
-[`robot_models/current_lightweight_arm/README.md`](robot_models/current_lightweight_arm/README.md).
-The hardware path uses one PCA9685. Physical `arm_1` is installed with its four
-MG996R signals on channels 0-3; physical `arm_2` is recorded as unbuilt. The
-I2C address, calibrated oscillator, PWM frequency, installation state, channel
-map, and pulse endpoints live in the robot configuration rather than in driver
-code. Plans for unavailable arms and dual-arm driver startup are blocked.
+[`robot_models/four_dof_desktop_arm/README.md`](robot_models/four_dof_desktop_arm/README.md).
+The hardware path uses one PCA9685 and the confirmed external 6 V/10 A supply.
+The new arm's installation state, channel map, pulse endpoints, and SG90 voltage
+compatibility are deliberately unconfirmed. These values live in the robot
+configuration rather than driver code. Physical execution and dual-arm startup
+remain blocked until the corresponding installation records are calibrated.
 
 The older `demo` routes a toy instruction to a policy and completes a three-step
 line world. Its manually defined encoder is explicitly a plumbing fixture, not
 MiniLM and not a robot benchmark.
 
-## Exact component routing
+## Local Baseten credentials
 
-`ComponentRegistry` replaces a single generalized-specialist choice with an
-exact capability catalog. Wildcard capabilities are invalid. The remote router
-returns one allow-listed component ID, and the Pi calls its configured Baseten
-model or local hardware/state component. The full layered flow is implemented
-by `PhysicalAI`.
+Copy `.env.example` to `.env` and place the Baseten key in the ignored local
+file:
 
-The paper-compatible `ExpertRegistry`, embedding router, prompt router, and
-adapter serving remain available as lower-level policy-routing experiments.
-Their pretrained language models are development tooling and are not the Pi
-production router.
+```powershell
+Copy-Item .env.example .env
+```
+
+```dotenv
+BASETEN_API_KEY=your-key-here
+```
+
+Cloud clients load `.env` from the current working directory. An existing
+`BASETEN_API_KEY` process environment variable takes precedence. Set
+`MOIRA_ENV_FILE` when launching outside the repository and the secret file is
+stored elsewhere. Never commit `.env`.
+
+### Deploy the speech-to-text specialist
+
+The repository includes a Whisper Large V3 Turbo Truss fixed to the Baseten
+`L4:4x16` instance that is available to this workspace. From the repository
+root:
+
+```powershell
+py -3.12 -m venv .venv-deploy
+.\.venv-deploy\Scripts\python.exe -m pip install --upgrade pip truss==0.18.30
+.\.venv-deploy\Scripts\truss.exe login --browser
+.\.venv-deploy\Scripts\truss.exe push deploy\baseten_whisper --watch
+```
+
+After the development deployment is ready, set `BASETEN_STT_MODEL_ID` in the
+ignored `.env` file and test a real command recording:
+
+```powershell
+.\.venv\Scripts\python.exe tools\test_baseten_stt.py path\to\command.wav
+```
+
+See `deploy/baseten_whisper/README.md` for the endpoint contract and deployment
+details.
+
+## General semantic routing with typed compatibility
+
+MoIRA remains the general task-to-specialist router described by the paper.
+Every specialist declares short and abstract natural-language descriptions plus
+representative routing phrases. The frozen MiniLM router embeds the current
+request and ranks each expert by its best metadata-prototype similarity. Adding
+or replacing an expert does not require a route-table edit or router training.
+`examples/physical_ai_specialists.json` is the current catalog.
+
+`ComponentRegistry` is the robot-side compatibility and authority gate. Exact
+capabilities reject components with the wrong request/response schema, runtime,
+or safety role before semantic routing. This gate does not decide which
+compatible specialist best matches the task. The Baseten Chain receives only
+allow-listed compatible IDs and performs the paper-style semantic choice. If a
+contract has one provider, there is no choice to infer and that provider is
+selected directly.
+
+The layered workflow composes specialists by making several typed routing
+requests: speech, perception, planning, manipulation policy, short-horizon
+world prediction, reward, and verification. This orchestration is an extension
+around MoIRA; the routing rule itself remains architecture-agnostic and frozen.
+The full flow is implemented by `PhysicalAI`, while local collision checks,
+hard safety, and motor control retain authority on the Pi.
+
+On the authored routing test, the unrestricted 20-expert pool scored 19/20. The
+actual typed world-model pool scored 6/6. A raw-instruction policy
+pool scored 5/6, while the production-shaped query containing the grounded goal,
+planner action, arms, and target scored 6/6. These are small repository
+regressions, not a robotics benchmark; run
+`tools/evaluate_physical_router.py` after every catalog change.
 
 The physical path uses these exact capability groups:
 
@@ -108,6 +191,10 @@ configuration. Production neural model IDs in
 `examples/pi4_components.json` are explicit deployment placeholders and must be
 replaced with robot-specific trained endpoints. An unavailable endpoint fails
 the request; offline implementations are never used as production substitutes.
+The [robot model training audit](docs/training-audit.md) identifies every
+component that needs training, pretrained deployment, sensor data, or calibration.
+The [arm #1 training playbook](docs/training-playbook.md) defines the initial
+voice-conditioned dataset, ACT policy, short-horizon dynamics, and deployment flow.
 
 ## Pretrained routers
 
@@ -115,15 +202,15 @@ Install the desired backend, then route an instruction:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[embeddings,prompt]"
-.\.venv\Scripts\python.exe -m moira route --experts examples/libero_experts.json "Pick up the bowl to the right of the cup."
+.\.venv\Scripts\python.exe -m moira route --experts examples/physical_ai_specialists.json --interface manipulation.policy.v1 "Use both arms to carry the box."
 ```
 
-The CLI defaults to `--router hybrid`: MiniLM ranks experts, and SmolLM2 resolves
-the selection when the top two cosine scores differ by less than `--min-margin`
-(default `0.05`). This fixes the observed left/right confusion without adding
-task-specific keyword rules. For the Python API, use `HybridRouter(registry)`.
-The LM loads only when disambiguation is needed; if it is unavailable or returns
-an invalid selection, routing fails before any policy executes.
+The CLI and production Baseten Chain default to the frozen MiniLM prototype
+router. For physical AI, `--interface` first limits the pool by a data/schema
+contract such as `manipulation.policy.v1` or `world.predict.v1`; MiniLM then
+compares the request with each expert's description and representative phrases.
+Compatibility filtering and routing prototypes are metadata-driven and do not
+encode task-to-expert rules in application code.
 
 The default embedding model is
 [`sentence-transformers/all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
@@ -133,14 +220,16 @@ probabilities. Registry additions, removals,
 or changed descriptions invalidate the cache automatically. MiniLM inherits its
 model's input truncation limit; keep individual descriptions short.
 
-The two original paper strategies remain available with `--router embedding`
-and `--router prompt`. Explicit embedding mode uses pure cosine argmax, resolves
-ties by registration order, and retains the known directional limitation. Use it
-for baseline comparisons, or when that behavior is deliberately desired:
+The paper's two exact strategies remain available with `--router embedding`
+(description-only cosine argmax) and `--router prompt`. Production's
+`--router prototype` extends the embedding strategy with expert-owned example
+phrases, retaining frozen weights and add-with-metadata behavior. The repository
+also retains an explicit `--router hybrid` research extension. Production has
+no automatic fallback: an unavailable or invalid router stops the request.
 
 ```powershell
 .\.venv\Scripts\python.exe -m moira route --experts examples/directional_experts.json --router embedding "Travel toward the right end of the line."
-.\.venv\Scripts\python.exe -m moira route --experts examples/directional_experts.json "Travel toward the right end of the line."
+.\.venv\Scripts\python.exe -m moira route --experts examples/directional_experts.json --router hybrid "Travel toward the right end of the line."
 ```
 
 For this regression, the baseline selects `left`; hybrid selects `right` through
@@ -190,13 +279,13 @@ image preprocessing, embodiment information, normalization statistics, action
 decoding, and any action-chunk queue. `reset` must clear episode state.
 
 ```python
-from moira import ExpertRegistry, HybridRouter, InMemoryServer, MoIRA
+from moira import EmbeddingRouter, ExpertRegistry, InMemoryServer, MoIRA
 
 
 # Supply independently loaded policy wrappers implementing reset() and act().
 def build_controller(spatial_policy, goal_policy):
     registry = ExpertRegistry.from_json("examples/libero_experts.json")
-    router = HybridRouter(registry)
+    router = EmbeddingRouter(registry)
     server = InMemoryServer({"spatial": spatial_policy, "goal": goal_policy})
     return MoIRA(registry, router, server)
 

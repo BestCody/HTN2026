@@ -32,10 +32,11 @@ def _vector3(value: object, name: str) -> tuple[float, float, float]:
 class RobotJoint:
     name: str
     role: str
-    axis: tuple[float, float, float]
-    lower_rad: float
-    upper_rad: float
-    home_rad: float
+    actuator_model: str
+    axis: tuple[float, float, float] | None
+    lower_rad: float | None
+    upper_rad: float | None
+    home_rad: float | None
     origin_m: tuple[float, float, float] | None = None
     max_velocity_rad_s: float | None = None
 
@@ -44,14 +45,21 @@ class RobotJoint:
             raise ValueError("Robot joint name must be non-empty")
         if self.role not in ("kinematic", "gripper"):
             raise ValueError("Robot joint role must be kinematic or gripper")
-        _vector3(self.axis, f"{self.name} axis")
-        lower = _finite(self.lower_rad, f"{self.name} lower limit")
-        upper = _finite(self.upper_rad, f"{self.name} upper limit")
-        home = _finite(self.home_rad, f"{self.name} home")
-        if lower >= upper:
-            raise ValueError(f"{self.name} lower limit must be below its upper limit")
-        if not lower <= home <= upper:
-            raise ValueError(f"{self.name} home must be inside its limits")
+        if not isinstance(self.actuator_model, str) or not self.actuator_model.strip():
+            raise ValueError(f"{self.name} actuator_model must be non-empty")
+        if self.axis is not None:
+            _vector3(self.axis, f"{self.name} axis")
+        limits = (self.lower_rad, self.upper_rad, self.home_rad)
+        if any(value is None for value in limits) and not all(value is None for value in limits):
+            raise ValueError(f"{self.name} lower, upper, and home limits must be set together")
+        if all(value is not None for value in limits):
+            lower = _finite(self.lower_rad, f"{self.name} lower limit")
+            upper = _finite(self.upper_rad, f"{self.name} upper limit")
+            home = _finite(self.home_rad, f"{self.name} home")
+            if lower >= upper:
+                raise ValueError(f"{self.name} lower limit must be below its upper limit")
+            if not lower <= home <= upper:
+                raise ValueError(f"{self.name} home must be inside its limits")
         if self.origin_m is not None:
             if not isinstance(self.origin_m, tuple) or len(self.origin_m) != 3:
                 raise ValueError(f"{self.name} origin must contain three values")
@@ -212,10 +220,11 @@ class RobotModel:
     model_id: str
     source_file: str
     source_sha256: str
-    servo_model: str
-    up_axis: str
+    source_manifest: str | None
+    print_file: str | None
+    up_axis: str | None
     components: tuple[str, ...]
-    payload_limit_kg: float
+    payload_limit_kg: float | None
     joints: tuple[RobotJoint, ...]
     upper_arm_m: float | None
     forearm_m: float | None
@@ -244,35 +253,41 @@ class RobotModel:
         for value, name in (
             (self.model_id, "model_id"),
             (self.source_file, "source_file"),
-            (self.servo_model, "servo_model"),
         ):
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{name} must be non-empty")
-        if self.up_axis not in ("x", "y", "z"):
-            raise ValueError("Robot up_axis must be x, y, or z")
+        for value, name in (
+            (self.source_manifest, "source_manifest"),
+            (self.print_file, "print_file"),
+        ):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{name} must be null or a non-empty path")
+        if self.up_axis is not None and self.up_axis not in ("x", "y", "z"):
+            raise ValueError("Robot up_axis must be x, y, z, or null")
         if (
-            len(self.components) != 5
-            or len(set(self.components)) != 5
+            len(self.components) < 2
+            or len(set(self.components)) != len(self.components)
             or any(not isinstance(item, str) or not item.strip() for item in self.components)
         ):
-            raise ValueError("Current lightweight arm requires five unique named components")
+            raise ValueError("Robot model requires at least two unique named components")
         if (
             not isinstance(self.source_sha256, str)
             or len(self.source_sha256) != 64
             or any(character not in "0123456789abcdefABCDEF" for character in self.source_sha256)
         ):
             raise ValueError("source_sha256 must be a 64-character hexadecimal digest")
-        payload = _finite(self.payload_limit_kg, "payload_limit_kg")
-        if payload <= 0:
-            raise ValueError("payload_limit_kg must be positive")
-        if len(self.joints) != 4 or len({joint.name for joint in self.joints}) != 4:
-            raise ValueError("Current lightweight arm configuration requires four unique joints")
-        if len([joint for joint in self.joints if joint.role == "kinematic"]) != 3:
-            raise ValueError("Current lightweight arm requires three kinematic joints")
+        if self.payload_limit_kg is not None and (
+            _finite(self.payload_limit_kg, "payload_limit_kg") <= 0
+        ):
+            raise ValueError("payload_limit_kg must be positive when present")
+        if not self.joints or len({joint.name for joint in self.joints}) != len(self.joints):
+            raise ValueError("Robot configuration requires unique joints")
+        if not any(joint.role == "kinematic" for joint in self.joints):
+            raise ValueError("Robot configuration requires at least one kinematic joint")
         if len([joint for joint in self.joints if joint.role == "gripper"]) != 1:
-            raise ValueError("Current lightweight arm requires one gripper joint")
+            raise ValueError("Robot configuration requires one gripper joint")
         if not isinstance(self.servo_controller, PCA9685Config):
-            raise TypeError("Current lightweight arm requires a PCA9685 servo controller")
+            raise TypeError("Robot configuration requires a PCA9685 servo controller")
         joint_names = {joint.name for joint in self.joints}
         if any(
             set(mapping) != joint_names for mapping in self.servo_controller.actuators.values()
@@ -349,6 +364,9 @@ class RobotModel:
             and self.collision_geometry_validated
             and self.actuator_mapping_validated
             and self.payload_validated
+            and self.payload_limit_kg is not None
+            and self.up_axis is not None
+            and len(self.kinematic_joints) == 3
             and not self.blockers
             and self.upper_arm_m is not None
             and self.forearm_m is not None
@@ -366,6 +384,13 @@ class RobotModel:
             and self.servo_controller.ready
             and set(self.meshes) == set(self.components)
             and self.mesh_scale_to_m is not None
+            and all(joint.axis is not None for joint in self.joints)
+            and all(
+                joint.lower_rad is not None
+                and joint.upper_rad is not None
+                and joint.home_rad is not None
+                for joint in self.joints
+            )
             and all(joint.origin_m is not None for joint in self.joints)
             and all(joint.max_velocity_rad_s is not None for joint in self.joints)
         )
@@ -391,7 +416,7 @@ class RobotModel:
     @property
     def bimanual_readiness_issues(self) -> tuple[str, ...]:
         return tuple(
-            f"{installation.physical_id} is not built"
+            f"{installation.physical_id} is not marked installed"
             for installation in self.servo_controller.arm_installations.values()
             if not installation.installed
         )
@@ -399,6 +424,12 @@ class RobotModel:
     @property
     def readiness_issues(self) -> tuple[str, ...]:
         missing = []
+        if self.up_axis is None:
+            missing.append("coordinate-frame up axis")
+        if self.payload_limit_kg is None:
+            missing.append("validated payload limit")
+        if len(self.kinematic_joints) != 3:
+            missing.append("three-joint planar motion layout")
         if not self.calibration_complete:
             missing.append("physical calibration")
         for validated, label in (
@@ -429,14 +460,23 @@ class RobotModel:
             if value is None:
                 missing.append(name)
         if set(self.meshes) != set(self.components):
-            missing.append("five exported collision meshes")
+            missing.append("exported collision meshes for every configured link")
         if self.mesh_scale_to_m is None:
             missing.append("validated mesh scale")
         if any(joint.origin_m is None for joint in self.joints):
             missing.append("joint origins")
+        if any(joint.axis is None for joint in self.joints):
+            missing.append("joint axes")
+        if any(
+            joint.lower_rad is None or joint.upper_rad is None or joint.home_rad is None
+            for joint in self.joints
+        ):
+            missing.append("joint limits and home positions")
         if any(joint.max_velocity_rad_s is None for joint in self.joints):
             missing.append("calibrated joint velocity limits")
         controller = self.servo_controller
+        if not controller.installed_arms:
+            missing.append("at least one installed physical arm")
         if controller.i2c_address is None:
             missing.append("PCA9685 I2C address")
         if controller.reference_clock_hz is None:
@@ -465,12 +505,18 @@ class RobotModel:
     def gripper_joint(self) -> RobotJoint:
         return next(joint for joint in self.joints if joint.role == "gripper")
 
+    @property
+    def servo_models(self) -> Mapping[str, str]:
+        """Return the physical servo model selected for every configured actuator."""
+
+        return {joint.name: joint.actuator_model for joint in self.joints}
+
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> RobotModel:
         if not isinstance(value, Mapping):
             raise TypeError("Robot model must be a mapping")
-        if value.get("schema_version") != 4:
-            raise ValueError("Robot model schema_version must be 4")
+        if value.get("schema_version") != 5:
+            raise ValueError("Robot model schema_version must be 5")
         geometry = value.get("geometry", {})
         if not isinstance(geometry, Mapping):
             raise TypeError("Robot geometry must be a mapping")
@@ -503,10 +549,19 @@ class RobotModel:
                 RobotJoint(
                     str(joint.get("name", "")),
                     str(joint.get("role", "")),
-                    _vector3(joint.get("axis"), "joint axis"),
-                    math.radians(_finite(joint.get("lower_deg"), "joint lower_deg")),
-                    math.radians(_finite(joint.get("upper_deg"), "joint upper_deg")),
-                    math.radians(_finite(joint.get("home_deg"), "joint home_deg")),
+                    str(joint.get("actuator_model", "")),
+                    None
+                    if joint.get("axis") is None
+                    else _vector3(joint.get("axis"), "joint axis"),
+                    None
+                    if joint.get("lower_deg") is None
+                    else math.radians(_finite(joint.get("lower_deg"), "joint lower_deg")),
+                    None
+                    if joint.get("upper_deg") is None
+                    else math.radians(_finite(joint.get("upper_deg"), "joint upper_deg")),
+                    None
+                    if joint.get("home_deg") is None
+                    else math.radians(_finite(joint.get("home_deg"), "joint home_deg")),
                     None
                     if origin is None
                     else tuple(_finite(item, "joint origin") for item in origin),
@@ -573,10 +628,17 @@ class RobotModel:
             str(value.get("model_id", "")),
             str(value.get("source_file", "")),
             str(value.get("source_sha256", "")),
-            str(value.get("servo_model", "")),
-            str(coordinate_frame.get("up_axis", "")).casefold(),
+            None
+            if value.get("source_manifest") is None
+            else str(value.get("source_manifest")),
+            None if value.get("print_file") is None else str(value.get("print_file")),
+            None
+            if coordinate_frame.get("up_axis") is None
+            else str(coordinate_frame.get("up_axis")).casefold(),
             tuple(components),
-            _finite(value.get("payload_limit_kg"), "payload_limit_kg"),
+            None
+            if value.get("payload_limit_kg") is None
+            else _finite(value.get("payload_limit_kg"), "payload_limit_kg"),
             tuple(joints),
             geometry.get("upper_arm_m"),
             geometry.get("forearm_m"),
@@ -614,6 +676,54 @@ def load_robot_model(path: str | Path, *, verify_source: bool = False) -> RobotM
         digest = hashlib.sha256(source.read_bytes()).hexdigest()
         if digest.casefold() != model.source_sha256.casefold():
             raise ValueError("Robot source model does not match source_sha256")
+        if model.source_manifest is not None:
+            manifest_path = (config_path.parent / model.source_manifest).resolve()
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("schema_version") != 1:
+                raise ValueError("Robot source manifest schema_version must be 1")
+            artifacts = manifest.get("artifacts")
+            if not isinstance(artifacts, list) or not artifacts:
+                raise ValueError("Robot source manifest must contain artifacts")
+            verified_artifacts: set[Path] = set()
+            for artifact in artifacts:
+                if not isinstance(artifact, Mapping):
+                    raise TypeError("Robot source manifest artifacts must be mappings")
+                relative = artifact.get("path")
+                expected_digest = artifact.get("sha256")
+                expected_bytes = artifact.get("bytes")
+                if not isinstance(relative, str) or not relative.strip():
+                    raise ValueError("Robot source manifest artifact path must be non-empty")
+                artifact_path = (manifest_path.parent / relative).resolve()
+                if (
+                    not isinstance(expected_bytes, int)
+                    or isinstance(expected_bytes, bool)
+                    or expected_bytes < 0
+                ):
+                    raise ValueError("Robot source artifact bytes must be a non-negative integer")
+                if (
+                    not isinstance(expected_digest, str)
+                    or len(expected_digest) != 64
+                    or any(
+                        character not in "0123456789abcdefABCDEF"
+                        for character in expected_digest
+                    )
+                ):
+                    raise ValueError("Robot source artifact sha256 must be a hexadecimal digest")
+                if not artifact_path.is_file():
+                    raise FileNotFoundError(
+                        f"Robot source artifact does not exist: {artifact_path}"
+                    )
+                if artifact_path.stat().st_size != expected_bytes:
+                    raise ValueError(f"Robot source artifact size mismatch: {artifact_path}")
+                artifact_digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+                if artifact_digest.casefold() != str(expected_digest).casefold():
+                    raise ValueError(f"Robot source artifact digest mismatch: {artifact_path}")
+                verified_artifacts.add(artifact_path)
+            required_artifacts = {source}
+            if model.print_file is not None:
+                required_artifacts.add((config_path.parent / model.print_file).resolve())
+            if not required_artifacts <= verified_artifacts:
+                raise ValueError("Robot source manifest omits a configured source artifact")
     if model.motion_ready:
         model_dir = config_path.parent.resolve()
         for component, relative in model.meshes.items():
@@ -625,10 +735,10 @@ def load_robot_model(path: str | Path, *, verify_source: bool = False) -> RobotM
     return model
 
 
-def load_bundled_current_arm_model() -> RobotModel:
-    """Load the packaged current-arm metadata without assuming a repository checkout."""
+def load_bundled_robot_model() -> RobotModel:
+    """Load the packaged active robot metadata without assuming a repository checkout."""
 
     resource = importlib.resources.files("moira").joinpath(
-        "data/current_lightweight_arm.json"
+        "data/four_dof_desktop_arm.json"
     )
     return RobotModel.from_mapping(json.loads(resource.read_text(encoding="utf-8")))

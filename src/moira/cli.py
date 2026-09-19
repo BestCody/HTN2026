@@ -20,20 +20,34 @@ from .evaluation import evaluate_routing, load_samples
 from .experts import ExpertRegistry
 from .pi import PiRuntimeProfile, inspect_host
 from .robot_config import load_robot_model
-from .routing import DEFAULT_MIN_MARGIN, EmbeddingRouter, HybridRouter, PromptExample, PromptRouter
+from .robot_sources import inspect_3mf
+from .routing import (
+    DEFAULT_MIN_MARGIN,
+    EmbeddingRouter,
+    HybridRouter,
+    PromptExample,
+    PromptRouter,
+    PrototypeEmbeddingRouter,
+)
 
 
 def _router(args, registry):
     options = dict(device=args.device, revision=args.revision, local_files_only=args.offline)
-    if args.router == "embedding":
-        return EmbeddingRouter(
+    if args.router in ("embedding", "prototype"):
+        router_type = EmbeddingRouter if args.router == "embedding" else PrototypeEmbeddingRouter
+        return router_type(
             registry,
             SentenceTransformerEncoder(args.model or MINILM_MODEL, **options),
             style=args.style,
         )
     examples = []
     if args.examples:
-        examples = [PromptExample(s.instruction, s.expert_id) for s in load_samples(args.examples)]
+        candidate_ids = {expert.id for expert in registry.snapshot()}
+        examples = [
+            PromptExample(sample.instruction, sample.expert_id)
+            for sample in load_samples(args.examples)
+            if sample.expert_id in candidate_ids
+        ]
     if args.router == "hybrid":
         return HybridRouter(
             registry,
@@ -88,7 +102,18 @@ def main(argv: list[str] | None = None) -> int:
     for command in ("route", "evaluate"):
         sub = commands.add_parser(command)
         sub.add_argument("--experts", required=True, type=Path, help="Expert JSON manifest")
-        sub.add_argument("--router", choices=("hybrid", "embedding", "prompt"), default="hybrid")
+        sub.add_argument(
+            "--interface",
+            help=(
+                "Restrict routing to experts that declare this compatibility interface; "
+                "selection inside that pool remains semantic"
+            ),
+        )
+        sub.add_argument(
+            "--router",
+            choices=("prototype", "embedding", "prompt", "hybrid"),
+            default="prototype",
+        )
         sub.add_argument("--style", choices=("simple", "abstract"), default="simple")
         sub.add_argument("--model", help="Primary model; the embedding model in hybrid mode")
         sub.add_argument("--fallback-model", help="Language model used by the hybrid router")
@@ -119,9 +144,9 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--fallback-model and --fallback-revision require --router hybrid")
         if args.router != "hybrid" and args.min_margin is not None:
             parser.error("--min-margin requires --router hybrid")
-        if args.router == "embedding" and args.examples:
+        if args.router in ("embedding", "prototype") and args.examples:
             parser.error("--examples is only used by prompt or hybrid routing")
-        if args.router == "embedding" and args.max_new_tokens is not None:
+        if args.router in ("embedding", "prototype") and args.max_new_tokens is not None:
             parser.error("--max-new-tokens is only used by prompt or hybrid routing")
     try:
         if args.command == "demo":
@@ -147,11 +172,15 @@ def main(argv: list[str] | None = None) -> int:
             model = load_robot_model(args.model, verify_source=args.verify_source)
             if args.require_motion_ready:
                 model.require_motion_ready()
+            print_package = None
+            if model.print_file is not None:
+                print_path = (Path(args.model).parent / model.print_file).resolve()
+                print_package = inspect_3mf(print_path).as_dict()
             output = {
                 "model_id": model.model_id,
                 "source_file": model.source_file,
                 "source_sha256": model.source_sha256,
-                "servo_model": model.servo_model,
+                "servo_models": model.servo_models,
                 "servo_controller": "pca9685",
                 "pca9685_i2c_address": model.servo_controller.i2c_address,
                 "pca9685_pwm_frequency_hz": model.servo_controller.pwm_frequency_hz,
@@ -171,6 +200,7 @@ def main(argv: list[str] | None = None) -> int:
                 "payload_limit_kg": model.payload_limit_kg,
                 "kinematic_joints": [joint.name for joint in model.kinematic_joints],
                 "gripper_joint": model.gripper_joint.name,
+                "print_package": print_package,
                 "motion_ready": model.motion_ready,
                 "bimanual_motion_ready": model.bimanual_motion_ready,
                 "blockers": model.blockers,
@@ -179,15 +209,29 @@ def main(argv: list[str] | None = None) -> int:
             }
         else:
             registry = ExpertRegistry.from_json(args.experts)
+            if args.interface:
+                registry = registry.for_interface(args.interface)
             router = _router(args, registry)
             if args.command == "route":
                 output = asdict(router.route(args.instruction))
             else:
+                samples = load_samples(args.samples)
+                labels = [e.id for e in registry.snapshot()]
+                excluded_samples = sum(sample.expert_id not in labels for sample in samples)
+                if args.interface:
+                    samples = [sample for sample in samples if sample.expert_id in labels]
+                    if not samples:
+                        raise ValueError(
+                            f"No evaluation samples belong to interface: {args.interface}"
+                        )
                 output = evaluate_routing(
                     router,
-                    load_samples(args.samples),
-                    [e.id for e in registry.snapshot()],
+                    samples,
+                    labels,
                 )
+                if args.interface:
+                    output["interface"] = args.interface
+                    output["excluded_samples"] = excluded_samples
         print(json.dumps(output, indent=2, ensure_ascii=False))
     except (
         ValueError,

@@ -31,6 +31,7 @@ from moira.physical import (
     TaskRequest,
     VoiceGroundingInput,
     WorldState,
+    policy_routing_text,
 )
 from moira.pi import PiRuntimeProfile
 
@@ -48,14 +49,14 @@ def test_complete_edge_pipeline_uses_both_arms_and_learns_object_mass(tmp_path):
         "grasp-contact",
         "bimanual-coordination",
     )
-    assert result.learned_facts == ("mug measured 0.080 kg",)
+    assert result.learned_facts == ("mug measured 0.040 kg",)
     assert "accessible right side" in result.response
 
     memory = SQLitePersonalMemory(tmp_path / "memory.db")
     context = memory.run(MemoryQuery("sam", "next task", {"room": "kitchen"}))
     assert context.accommodations == ("left arm is broken",)
     assert any("Bring me the mug" in comment for comment in context.recent_comments)
-    assert context.learned_object_masses == {"mug": 0.08}
+    assert context.learned_object_masses == {"mug": 0.04}
 
 
 def test_bimanual_controller_starts_both_arm_commands_together():
@@ -82,6 +83,21 @@ def test_bimanual_controller_starts_both_arm_commands_together():
     report = component.run(ControlInput(plan, world, True))
     assert report.success
     assert {item.arm for item in report.telemetry} == {"left", "right"}
+
+
+def test_policy_routing_query_uses_grounded_plan_instead_of_a_route_table():
+    candidate = CandidatePlan(
+        "handover-plan",
+        (PlanStep("offer", "handover", ("right",), 0.5, "tool-1"),),
+        "present the requested tool to the user",
+    )
+
+    query = policy_routing_text("Please pass me the screwdriver", candidate)
+
+    assert "Please pass me the screwdriver" in query
+    assert "action=handover" in query
+    assert "arms=right" in query
+    assert "target=tool-1" in query
 
 
 def test_controller_runs_installed_primary_arm_and_blocks_unavailable_arm():

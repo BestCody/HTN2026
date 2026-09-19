@@ -27,7 +27,6 @@ from .physical import (
     TaskRequest,
 )
 from .pi import PiRuntimeProfile
-from .robot_config import load_bundled_current_arm_model
 from .specialists import (
     AnalyticGraspPlanner,
     BoundedTrajectoryPlanner,
@@ -56,6 +55,11 @@ class EdgeDemoResult:
     world_models: tuple[str, ...]
 
 
+# This value exists only inside the no-hardware fixture. The active robot profile
+# deliberately has no payload rating until the new arm passes a measured lift test.
+OFFLINE_PER_ARM_PAYLOAD_KG = 0.025
+
+
 def _register(
     registry: ComponentRegistry,
     spec: ComponentSpec,
@@ -67,7 +71,6 @@ def _register(
 def run_edge_demo(memory_path: str | Path | None = None) -> EdgeDemoResult:
     temporary = TemporaryDirectory() if memory_path is None else None
     try:
-        arm_model = load_bundled_current_arm_model()
         path = Path(memory_path) if memory_path is not None else Path(temporary.name) / "memory.db"
         memory = SQLitePersonalMemory(path)
         memory.set_profile(
@@ -77,9 +80,10 @@ def run_edge_demo(memory_path: str | Path | None = None) -> EdgeDemoResult:
             workspace={"counter_height_m": 0.9},
         )
         planner = LayeredRulePlanner()
+        demo_object_mass_kg = round(OFFLINE_PER_ARM_PAYLOAD_KG * 1.6, 6)
         left, right = (
-            SimulatedArmDriver("left", measured_mass_kg=0.08),
-            SimulatedArmDriver("right", measured_mass_kg=0.08),
+            SimulatedArmDriver("left", measured_mass_kg=demo_object_mass_kg),
+            SimulatedArmDriver("right", measured_mass_kg=demo_object_mass_kg),
         )
         registry = ComponentRegistry(ram_budget_mb=256, allow_remote=True)
         specs = [
@@ -232,7 +236,7 @@ def run_edge_demo(memory_path: str | Path | None = None) -> EdgeDemoResult:
                         estimated_ram_mb=3,
                         max_concurrency=2,
                     ),
-                    StateSpaceWorldModel(kind, per_arm_payload_kg=arm_model.payload_limit_kg),
+                    StateSpaceWorldModel(kind, per_arm_payload_kg=OFFLINE_PER_ARM_PAYLOAD_KG),
                 )
                 for component_id, layer, capability, kind in (
                     ("forward-dynamics", Layer.DYNAMICS, "dynamics.predict", "forward-dynamics"),
@@ -273,7 +277,7 @@ def run_edge_demo(memory_path: str | Path | None = None) -> EdgeDemoResult:
                     estimated_ram_mb=2,
                     max_concurrency=2,
                 ),
-                HardSafetyRiskModel(per_arm_payload_kg=arm_model.payload_limit_kg),
+                HardSafetyRiskModel(per_arm_payload_kg=OFFLINE_PER_ARM_PAYLOAD_KG),
             ),
             (
                 ComponentSpec(
@@ -324,7 +328,7 @@ def run_edge_demo(memory_path: str | Path | None = None) -> EdgeDemoResult:
                     "online-load-feedback-v1",
                     estimated_ram_mb=2,
                 ),
-                LoadFeedbackComponent(single_arm_payload_kg=arm_model.payload_limit_kg),
+                LoadFeedbackComponent(single_arm_payload_kg=OFFLINE_PER_ARM_PAYLOAD_KG),
             ),
             (
                 ComponentSpec(
@@ -355,7 +359,7 @@ def run_edge_demo(memory_path: str | Path | None = None) -> EdgeDemoResult:
                         "label": "mug",
                         "confidence": 0.99,
                         "position_m": (0.4, 0.1, 0.9),
-                        "estimated_mass_kg": 0.08,
+                        "estimated_mass_kg": demo_object_mass_kg,
                         "attributes": {"width_m": 0.07, "height_m": 0.10},
                     }
                 ]

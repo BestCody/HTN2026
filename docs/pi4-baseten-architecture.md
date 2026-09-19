@@ -10,7 +10,7 @@ reported and physical execution does not begin.
 flowchart LR
     MIC[Microphone] --> PI[Pi 4B edge gateway]
     CAM[CSI / USB cameras] --> PI
-    PI -->|exact capability + allow-list| ROUTER[Baseten router Chain]
+    PI -->|task text + compatible allow-list| ROUTER[Frozen MiniLM router Chain]
     ROUTER -->|component ID only| PI
     PI --> STT[Baseten STT]
     PI --> VNLP[Baseten scene-grounded voice NLP]
@@ -26,7 +26,7 @@ flowchart LR
     PI --> LOCAL[Local IK + trajectory + collision + tactile + safety]
     LOCAL --> CTRL[Local bimanual control]
     CTRL --> PCA[PCA9685 PWM controller]
-    PCA --> ARMS[Eight calibrated MG996R actuators]
+    PCA --> ARMS[Per arm: 2 MG996R + 2 SG90 actuators]
     ARMS --> SENSORS[Encoders, current/load sensing, stop input]
     SENSORS --> PI
 ```
@@ -68,9 +68,11 @@ Official references:
    produces a spoken clarification and stops the run.
 6. A 6-DoF grasp specialist returns scored gripper poses and collision
    probabilities for every grounded target.
-7. The planner proposes a small set of typed candidates. The router sends each
-   candidate to its exact policy: waypoint, bimanual ACT, pour, insert, lid, or
-   handover. Policies return bounded action chunks, never raw motor authority.
+7. The planner proposes a small set of typed candidates. The compatibility gate
+   forms the manipulation-policy pool, and the general text router chooses the
+   best waypoint, bimanual ACT, pour, insert, lid, or handover specialist for
+   each candidate. Policies return bounded action chunks, never raw motor
+   authority.
 8. Pi-side IK, trajectory generation, and collision checks validate each policy
    against current joint state, geometry, joint limits, and workspace clearance.
 9. Each viable policy is evaluated concurrently by the learned forward-dynamics
@@ -98,9 +100,18 @@ the emergency stop belong on the local motor controller and Pi-side driver.
 
 [`examples/pi4_components.json`](../examples/pi4_components.json) is the edge
 allow-list. Every component declares one or more exact, layer-prefixed
-capabilities. Wildcards are rejected. The router receives the capability and
-allow-listed IDs, and returns one ID; the Pi maps that ID to its configured
-Baseten endpoint. It never accepts a URL or credential from the router.
+capabilities, and wildcards are rejected. These contracts define which experts
+can exchange the requested typed data and which operations must stay local.
+They do not encode a task-to-expert decision.
+
+The compatible remote experts are described in
+[`examples/physical_ai_specialists.json`](../examples/physical_ai_specialists.json).
+Each declares one or more versioned interfaces, descriptions, and representative
+routing phrases. The router receives task text plus only the IDs allowed by the
+Pi, embeds the task and expert-owned prototypes with frozen MiniLM, and returns
+the ID with the highest prototype cosine similarity.
+The Pi maps that ID to its configured Baseten endpoint and validates it again.
+It never accepts a URL or credential from the router.
 
 The current capabilities are:
 
@@ -137,7 +148,8 @@ router a small CPU Chain; a deployable template is in
 
 ```bash
 cd deploy/baseten_router
-truss chains push --watch router.py
+truss chains push router.py --dryrun
+truss chains push router.py --promote
 ```
 
 On the Pi, set the API key outside the manifest:
@@ -171,7 +183,7 @@ def remote_model(model_id, *, entity="model"):
 
 
 model = load_robot_model(
-    "robot_models/current_lightweight_arm/model.json",
+    "robot_models/four_dof_desktop_arm/model.json",
     verify_source=True,
 )
 left_driver, right_driver, pca = pca9685_arm_drivers(model)
@@ -209,29 +221,32 @@ from moira import RemoteComponentRouter
 router = RemoteComponentRouter.from_baseten_chain(registry, "ROUTER_CHAIN_ID")
 ```
 
-## Current lightweight arm
+## Four-DOF desktop arm
 
-`Current_Lightweight_Arm.f3d` defines four MG996R actuators per arm: three
-positioning joints and one gripper actuator. Its design target is 50 g per arm,
-so offline prediction and feedback read 0.05 kg from the bundled robot
-configuration and route a 0.08 kg fixture object to both arms. The gripper
-command is separate from the three-angle IK result.
+The active SolidWorks assembly uses MG996R servos for base yaw and shoulder
+pitch, plus SG90 servos for elbow pitch and the end-effector mechanism. MoIRA
+emits three positioning angles and a separate aperture command. No payload
+rating or joint limit from the retired arm is carried into this profile.
 
-The current physical inventory has only `arm_1` built. It is assigned to the
-primary `left` software control slot and uses PCA9685 channels 0-3. `arm_2` is
-explicitly unbuilt, so production planning removes candidates that require the
-unavailable slot and the bimanual hardware factory remains blocked. The
-two-arm simulation fixture continues to exercise the intended final design.
+The supplied 3MF establishes millimetre print geometry for 12 unique meshes,
+but its transforms are slicer plate placement rather than assembly poses. The
+SolidWorks/Fusion export must supply the digital twin's joint frames and link
+transforms. The existing PCA9685 and 6 V/10 A supply are recorded, while the new
+installation state, channels, pulse endpoints, and SG90 voltage compatibility
+remain unconfirmed. The future two-arm simulation fixture can continue to
+exercise coordination, but production bimanual control stays unavailable until
+both physical installations have independent calibration records.
 
 The CAD model is not yet motion-ready. Exact link lengths, parent-frame joint
-origins, validated collision-mesh scale, Y-up perception, joint velocity limits,
+origins and axes, validated collision-mesh scale, coordinate frame, joint limits,
+joint velocity limits,
 actuator mapping, bimanual mount spacing, gripper aperture/force/speed, control
 frequency, clearance, payload testing, safety thresholds, controller timing,
 and physical calibration are required before the local kinematics, trajectory,
 collision, safety, feedback, orchestration, and hardware components can be
 constructed from it. Their `from_robot_model(...)` factories enforce the same
 gate. `moira robot-model-check` reports every missing value. See the
-[arm audit](current-lightweight-arm-audit.md) for the recovered metadata and
+[arm audit](four-dof-desktop-arm-audit.md) for the recovered metadata and
 export procedure.
 
 ## Pi bring-up

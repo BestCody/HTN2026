@@ -1,0 +1,171 @@
+{
+  "schema_version": 5,
+  "model_id": "four-dof-desktop-arm-v1",
+  "source_file": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/Sharma_Ishaan_robotAssem.SLDASM",
+  "source_sha256": "bc5ad54ea950fa068b1c95d26e907497d43277aab97aa67eb58ef610bfd86df5",
+  "source_manifest": "source_manifest.json",
+  "print_file": "../../Robotic+Arm.3mf",
+  "servo_count": 4,
+  "payload_limit_kg": null,
+  "coordinate_frame": {
+    "ground_plane": null,
+    "up_axis": null
+  },
+  "components": [
+    "fixed_base",
+    "turntable",
+    "upper_arm",
+    "forearm",
+    "end_effector"
+  ],
+  "joints": [
+    {
+      "name": "J1_BASE_YAW",
+      "role": "kinematic",
+      "actuator_model": "MG996R",
+      "axis": null,
+      "lower_deg": null,
+      "upper_deg": null,
+      "home_deg": null,
+      "origin_m": null,
+      "max_velocity_deg_s": null
+    },
+    {
+      "name": "J2_SHOULDER",
+      "role": "kinematic",
+      "actuator_model": "MG996R",
+      "axis": null,
+      "lower_deg": null,
+      "upper_deg": null,
+      "home_deg": null,
+      "origin_m": null,
+      "max_velocity_deg_s": null
+    },
+    {
+      "name": "J3_ELBOW",
+      "role": "kinematic",
+      "actuator_model": "SG90",
+      "axis": null,
+      "lower_deg": null,
+      "upper_deg": null,
+      "home_deg": null,
+      "origin_m": null,
+      "max_velocity_deg_s": null
+    },
+    {
+      "name": "J4_END_EFFECTOR",
+      "role": "gripper",
+      "actuator_model": "SG90",
+      "axis": null,
+      "lower_deg": null,
+      "upper_deg": null,
+      "home_deg": null,
+      "origin_m": null,
+      "max_velocity_deg_s": null
+    }
+  ],
+  "geometry": {
+    "upper_arm_m": null,
+    "forearm_m": null,
+    "shoulder_height_m": null
+  },
+  "bimanual_mount": {
+    "shoulder_offset_m": null
+  },
+  "control_limits": {
+    "trajectory_frequency_hz": null,
+    "required_clearance_m": null,
+    "max_gripper_width_m": null,
+    "max_gripper_velocity_m_s": null,
+    "max_gripper_force_n": null,
+    "controller_timeout_margin_s": null
+  },
+  "safety_limits": {
+    "max_slip_probability": null,
+    "max_collision_probability": null,
+    "min_grasp_stability_score": null
+  },
+  "servo_controller": {
+    "type": "pca9685",
+    "i2c_address": null,
+    "reference_clock_hz": null,
+    "pwm_frequency_hz": null,
+    "servo_supply_voltage": 6.0,
+    "servo_supply_current_a": 10.0,
+    "servo_power_validated": false,
+    "output_enable_validated": false,
+    "arm_installations": {
+      "left": {
+        "physical_id": "arm_1",
+        "installed": false
+      },
+      "right": {
+        "physical_id": "arm_2",
+        "installed": false
+      }
+    },
+    "actuators": {
+      "left": {
+        "J1_BASE_YAW": {
+          "channel": null,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        },
+        "J2_SHOULDER": {
+          "channel": null,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        },
+        "J3_ELBOW": {
+          "channel": null,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        },
+        "J4_END_EFFECTOR": {
+          "channel": null,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        }
+      },
+      "right": {
+        "J1_BASE_YAW": {
+          "channel": null,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        },
+        "J2_SHOULDER": {
+          "channel": null,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        },
+        "J3_ELBOW": {
+          "channel": null,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        },
+        "J4_END_EFFECTOR": {
+          "channel": null,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        }
+      }
+    }
+  },
+  "meshes": {},
+  "mesh_scale_to_m": null,
+  "calibration_complete": false,
+  "kinematics_validated": false,
+  "collision_geometry_validated": false,
+  "actuator_mapping_validated": false,
+  "payload_validated": false,
+  "blockers": [
+    "the new arm installation state and PCA9685 channel mapping have not been confirmed",
+    "joint axes, origins, limits, home positions, and link lengths require an assembly export",
+    "the 3MF contains millimetre print-plate layouts rather than assembled link transforms",
+    "the actual SG90 and MG996R dimensions must be checked against the included CAD servo models",
+    "the SG90 elbow requires a measured payload test because the designer reports load weakness",
+    "the SG90 supply-voltage rating must be confirmed before using the 6 V servo rail",
+    "end-effector travel, grip force, friction, and lever direction require physical calibration",
+    "collision meshes and a MuJoCo model have not been validated for this assembly"
+  ]
+}

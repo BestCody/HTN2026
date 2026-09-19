@@ -1,4 +1,4 @@
-"""PCA9685 hardware driver for calibrated dual MG996R arms on Raspberry Pi."""
+"""PCA9685 hardware driver for calibrated hobby-servo arms on Raspberry Pi."""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ class PCA9685ArmDriver:
         model.require_motion_ready()
         installation = model.servo_controller.arm_installations[arm]
         if not installation.installed:
-            raise RuntimeError(f"{installation.physical_id} is not built")
+            raise RuntimeError(f"{installation.physical_id} is not marked installed")
         for method in ("set_pulses_us", "disable_channels"):
             if not callable(getattr(device, method, None)):
                 raise TypeError(f"PCA9685 device must implement {method}()")

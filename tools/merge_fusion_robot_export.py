@@ -53,7 +53,7 @@ def merge(model_path: Path, export_path: Path, output_path: Path) -> dict[str, o
     model = json.loads(model_path.read_text(encoding="utf-8"))
     exported = json.loads(export_path.read_text(encoding="utf-8"))
     if not exported.get("complete"):
-        raise ValueError("Fusion export is incomplete; all five links and four joints are required")
+        raise ValueError("Fusion export is incomplete for the configured links and joints")
     expected_components = set(model.get("components", ()))
     if set(exported.get("meshes", {})) != expected_components:
         raise ValueError("Fusion export meshes do not exactly match configured robot components")
@@ -85,11 +85,16 @@ def merge(model_path: Path, export_path: Path, output_path: Path) -> dict[str, o
             raise ValueError(f"Exported joint {item['name']} does not contain an origin")
         configured["origin_m"] = transform["translation_m"]
         if item.get("axis") is not None:
-            configured["fusion_axis"] = item["axis"]
+            configured["axis"] = item["axis"]
         limits = item.get("limits", {})
-        if limits.get("minimum_enabled") and limits.get("maximum_enabled"):
+        if (
+            limits.get("minimum_enabled")
+            and limits.get("maximum_enabled")
+            and limits.get("rest_enabled")
+        ):
             configured["lower_deg"] = float(limits["minimum_rad"]) * 180 / 3.141592653589793
             configured["upper_deg"] = float(limits["maximum_rad"]) * 180 / 3.141592653589793
+            configured["home_deg"] = float(limits["rest_rad"]) * 180 / 3.141592653589793
 
     model["geometry"] = {
         "upper_arm_m": _parameter_m(exported["parameters"], "upper_length"),

@@ -11,11 +11,13 @@ from moira.pca9685 import (
 from moira.physical import ActionChunk, MotionTrajectory, TrajectoryPoint, WorldState
 from moira.robot_config import RobotModel
 
-MODEL_PATH = Path("robot_models/current_lightweight_arm/model.json")
+MODEL_PATH = Path("robot_models/four_dof_desktop_arm/model.json")
 
 
 def _calibrated_model(*, right_installed: bool = True) -> RobotModel:
     value = json.loads(MODEL_PATH.read_text(encoding="utf-8"))
+    value["payload_limit_kg"] = 0.025
+    value["coordinate_frame"] = {"ground_plane": "XZ", "up_axis": "Y"}
     value["geometry"] = {
         "upper_arm_m": 0.16,
         "forearm_m": 0.15,
@@ -46,9 +48,16 @@ def _calibrated_model(*, right_installed: bool = True) -> RobotModel:
     ):
         value[flag] = True
     value["blockers"] = []
-    for joint in value["joints"]:
-        joint["origin_m"] = [0.0, 0.0, 0.0]
-        joint["max_velocity_deg_s"] = 90.0
+    axes = ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0])
+    for joint, axis in zip(value["joints"], axes, strict=True):
+        joint.update(
+            axis=axis,
+            lower_deg=-45.0,
+            upper_deg=45.0,
+            home_deg=0.0,
+            origin_m=[0.0, 0.0, 0.0],
+            max_velocity_deg_s=90.0,
+        )
     value["servo_controller"] = {
         "type": "pca9685",
         "i2c_address": 0x40,
@@ -159,7 +168,7 @@ def test_pca9685_pair_rejects_missing_second_physical_arm():
     assert model.motion_ready
     assert not model.bimanual_motion_ready
     assert model.servo_controller.installed_arms == ("left",)
-    assert model.bimanual_readiness_issues == ("arm_2 is not built",)
+    assert model.bimanual_readiness_issues == ("arm_2 is not marked installed",)
     with pytest.raises(RuntimeError, match="not bimanual-motion-ready"):
         pca9685_arm_drivers(model, FakePCA9685())
 

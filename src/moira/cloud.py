@@ -9,12 +9,24 @@ import os
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import fields, is_dataclass
+from pathlib import Path
 from time import sleep
 from typing import Any, Literal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from dotenv import load_dotenv
+
 from .components import ComponentDecision, ComponentRegistry, Layer
+
+
+def _environment_value(name: str) -> str | None:
+    """Read process configuration, loading a repository-local .env if present."""
+
+    configured_path = os.environ.get("MOIRA_ENV_FILE")
+    env_path = Path(configured_path).expanduser() if configured_path else Path.cwd() / ".env"
+    load_dotenv(dotenv_path=env_path, override=False)
+    return os.environ.get(name)
 
 
 def _jsonable(value: Any) -> Any:
@@ -112,7 +124,7 @@ class BasetenEndpoint:
             raise ValueError("Baseten entity must be model or chain")
         if not isinstance(environment, str) or not identifier.fullmatch(environment):
             raise ValueError("Baseten environment contains unsupported characters")
-        api_key = api_key or os.environ.get("BASETEN_API_KEY")
+        api_key = api_key or _environment_value("BASETEN_API_KEY")
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("Set BASETEN_API_KEY or pass a Baseten API key")
         method = "predict" if entity == "model" else "run_remote"
@@ -169,7 +181,7 @@ class RemoteComponentRouter:
         if auth_scheme not in ("Bearer", "Api-Key"):
             raise ValueError("Router auth_scheme must be Bearer or Api-Key")
         environment_key = "BASETEN_API_KEY" if auth_scheme == "Api-Key" else "PHYSICAL_ROUTER_TOKEN"
-        token = token or os.environ.get(environment_key)
+        token = token or _environment_value(environment_key)
         if token is not None and (not isinstance(token, str) or not token.strip()):
             raise ValueError("Router token must be a non-empty string or null")
         self.registry, self.url, self.token, self.auth_scheme = (
@@ -208,6 +220,83 @@ class RemoteComponentRouter:
             capability,
             response["component_id"],
             router="remote",
+        )
+
+    def select_compatible(
+        self,
+        layer: Layer,
+        capabilities: tuple[str, ...],
+        routing_text: str,
+        context: Mapping[str, Any] | None = None,
+    ) -> ComponentDecision:
+        """Semantically select across compatible capabilities without a route table.
+
+        The caller defines the typed compatibility pool. The remote router sees
+        only component IDs that the edge registry has already admitted.
+        """
+        if isinstance(layer, str):
+            try:
+                layer = Layer(layer)
+            except ValueError as exc:
+                raise ValueError(f"Unknown component layer: {layer}") from exc
+        if not isinstance(layer, Layer):
+            raise TypeError("layer must be a Layer")
+        if (
+            not isinstance(capabilities, tuple)
+            or not capabilities
+            or len(set(capabilities)) != len(capabilities)
+            or any(
+                not isinstance(capability, str)
+                or not capability.startswith(f"{layer.value}.")
+                for capability in capabilities
+            )
+        ):
+            raise ValueError(
+                f"capabilities must contain unique values starting with '{layer.value}.'"
+            )
+        if not isinstance(routing_text, str) or not routing_text.strip():
+            raise ValueError("routing_text must be a non-empty string")
+        candidates = [
+            spec
+            for spec in self.registry.specs
+            if spec.layer is layer
+            and any(capability in spec.capabilities for capability in capabilities)
+            and (self.registry.allow_remote or spec.runtime != "remote")
+        ]
+        if not candidates:
+            raise LookupError(f"No compatible components are registered for layer: {layer.value}")
+        current_context = {**dict(context or {}), "routing_text": routing_text}
+        headers = {"Authorization": f"{self.auth_scheme} {self.token}"} if self.token else {}
+        response = self.http.post(
+            self.url,
+            {
+                "layer": layer.value,
+                "capability": f"{layer.value}.select_compatible",
+                "context": current_context,
+                "allowed_components": [spec.id for spec in candidates],
+            },
+            headers,
+        )
+        if not isinstance(response, dict) or not isinstance(response.get("component_id"), str):
+            raise ValueError("Router response must contain component_id")
+        selected_id = response["component_id"]
+        selected = next((spec for spec in candidates if spec.id == selected_id), None)
+        if selected is None:
+            raise LookupError(
+                f"Router selected a component outside the compatible pool: {selected_id}"
+            )
+        matched = tuple(
+            capability for capability in capabilities if capability in selected.capabilities
+        )
+        if len(matched) != 1:
+            raise LookupError(
+                f"Selected component must provide exactly one requested capability: {selected_id}"
+            )
+        return self.registry.decision_for(
+            layer,
+            matched[0],
+            selected_id,
+            router="remote_semantic",
         )
 
     @classmethod

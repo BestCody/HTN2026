@@ -1,0 +1,20 @@
+{"instruction":"Produce a labeled spatial inventory from the webcam image, including obstacles and table locations.","expert_id":"baseten-vision-scene"}
+{"instruction":"Calculate a reachable tool-center pose and approach geometry for grabbing the selected can.","expert_id":"baseten-grasp-pose"}
+{"instruction":"Recognize the words in this audio clip and return only their textual transcription.","expert_id":"baseten-stt"}
+{"instruction":"Using the current scene, convert the utterance into an action intent with resolved object references.","expert_id":"baseten-voice-nlp"}
+{"instruction":"Vocalize the confirmation sentence so the user can hear it.","expert_id":"baseten-tts"}
+{"instruction":"Construct a feasible sequence of steps for the goal using remembered user accommodations.","expert_id":"baseten-task-planner"}
+{"instruction":"Command one manipulator to reach, collect, transport, and place the small rigid cube.","expert_id":"baseten-waypoint-policy"}
+{"instruction":"Make the two manipulators share the load while moving the broad package in synchrony.","expert_id":"baseten-bimanual-act"}
+{"instruction":"Transfer juice from the bottle to the cup with a controlled stream and no spill.","expert_id":"baseten-pour-policy"}
+{"instruction":"Center the peg over the receptacle and press it in with compliant alignment corrections.","expert_id":"baseten-insert-policy"}
+{"instruction":"Unscrew and remove the bottle's top closure.","expert_id":"baseten-open-lid-policy"}
+{"instruction":"Offer the screwdriver to the user and release it once they have taken hold.","expert_id":"baseten-handover-policy"}
+{"instruction":"Estimate the generic next robot configuration and object pose caused by this action chunk.","expert_id":"baseten-forward-dynamics"}
+{"instruction":"Determine how the solid items move, rest, and collide during the proposed trajectory.","expert_id":"baseten-rigid-world"}
+{"instruction":"Forecast contact load, friction margin, and slippage for the candidate grip.","expert_id":"baseten-grasp-contact-world"}
+{"instruction":"Simulate mutual interference, force sharing, and synchronization error for the paired arms.","expert_id":"baseten-bimanual-world"}
+{"instruction":"Predict the changing geometry of the soft bag as it is squeezed and lifted.","expert_id":"baseten-deformable-world"}
+{"instruction":"Project the person's near-term body and hand occupancy around the robot.","expert_id":"baseten-human-motion-world"}
+{"instruction":"Rank the predicted candidate results by completion, cost, and satisfaction of the request.","expert_id":"baseten-task-reward"}
+{"instruction":"Compare pre-action and post-action evidence to judge if the requested result occurred.","expert_id":"baseten-outcome-verifier"}

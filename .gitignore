@@ -1,12 +1,50 @@
 .venv/
+.venv-training/
+.venv-deploy/
+
+# Python caches, test reports, and package builds
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 build/
 dist/
+
+# Model-training and evaluation outputs
 checkpoints/
 outputs/
+runs/
+wandb/
+mlruns/
+lightning_logs/
+*.log
 .cache/
+
+# Local credentials and user-specific runtime state
 .env
+.env.*
+!.env.example
+memory.db
+memory.db-*
+*.sqlite
+*.sqlite3
+
+# Generated CAD/slicer exports. Validated meshes copied into robot_models stay tracked.
+/four_dof_desktop_arm_export/
+/current_lightweight_arm_export/
+/result.json
+
+# Editor and operating-system metadata
+.idea/
+.vscode/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+Desktop.ini

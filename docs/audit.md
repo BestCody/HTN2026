@@ -50,19 +50,19 @@ switching, preload rollback, concurrent session leases, real PEFT training and
 reload, local Transformers generation, evaluation metrics, and closed-loop
 pretrained routing with learned adapter actions.
 
-The deep physical-audit run completed 131 normal tests, with 13 pretrained E2E
-tests skipped, in 13.30 seconds. The opt-in run completed all 144 tests in
-113.21 seconds. The E2E cases exercise 48 complete episodes across resident,
+The final physical-audit run completed 144 normal tests, with 13 pretrained E2E
+tests skipped. The opt-in run completed all 157 tests. The E2E cases exercise 48 complete episodes across resident,
 disk-swapped, and multi-adapter policy serving; measured details are in
 [E2E results](e2e-results.md).
 
 ## Raspberry Pi and component-routing extension
 
-The production architecture now treats the Pi 4B as an edge gateway rather than
-a host for every model. `ComponentRegistry` admits exact specialized
-capabilities, a remote allow-listed router selects one component, and Baseten
-model or Chain endpoints perform inference. Router and inference errors
-propagate; the hackathon path has no automatic component substitution.
+The production architecture treats the Pi 4B as an edge gateway rather than a
+host for every model. `ComponentRegistry` filters candidates by exact typed
+capabilities and authority. The frozen semantic router ranks the compatible
+specialists from their text descriptions, and Baseten model or Chain endpoints
+perform inference. Router and inference errors propagate; the hackathon path
+has no automatic component substitution.
 
 The layered `PhysicalAI` flow adds camera perception, scene-grounded DUM-E-style
 voice NLP, persistent personal and workspace context, 6-DoF grasp generation,
@@ -75,15 +75,17 @@ prohibited from holding motor, IK, motion, tactile-reflex, or hard-safety
 authority. See
 [Pi 4B and Baseten architecture](pi4-baseten-architecture.md).
 
-The supplied Fusion arm is now hash-pinned and gated by validated robot-model
-metadata. Tests cover the incomplete-model refusal, three-positioning-joint plus
-gripper split, exact source digest, and Fusion-export merge. The fixture uses
-the CAD's 50 g per-arm target instead of the former generic 0.8 kg assumption.
-See the [arm audit](current-lightweight-arm-audit.md).
+The active SolidWorks arm is now hash-pinned and gated by validated robot-model
+metadata. Tests cover every CAD/3MF digest, read-only 3MF inspection,
+incomplete-model refusal, per-joint MG996R/SG90 inventory, and Fusion-export
+merge. The new profile has no payload rating until this assembly passes a
+guarded physical lift test. The 25 g result from the retired arm is no longer
+used as robot configuration.
+See the [arm audit](four-dof-desktop-arm-audit.md).
 
 The repository still does not contain GR00T/OpenPI policy wrappers, the paper's
-training data, original metadata, trained production weights, hardware-specific
-arm drivers, or a certified physical emergency-stop implementation.
+training data, original metadata, trained production weights, a physical
+robot-state sensor adapter, or a certified independent emergency-stop implementation.
 The margin is an uncalibrated heuristic, and an LM can still make a valid-format
 but semantically wrong selection. Deployments need representative calibration,
 checkpoint-to-backbone compatibility checks, policy action limits, collision
@@ -115,8 +117,8 @@ control and repaired the following faults:
   and outcome, memory, reward, safety, plan, and control identities are checked;
 - forged router decision metadata, non-standard NaN JSON, contradictory safety
   reports, and malformed boundary objects now fail before physical authority;
-- model-backed IK distinguishes the arm's Y-up Fusion frame from the generic
-  Z-up fixture and rejects perception in the wrong coordinate convention.
+- model-backed IK rejects perception in a coordinate convention that differs
+  from the calibrated robot frame;
 - the arm configuration now owns bimanual spacing, control rate, clearance,
   gripper aperture/force/speed, local slip/collision/stability limits, and
   controller timing; robot-backed factories cannot override them with literals;
@@ -125,12 +127,12 @@ control and repaired the following faults:
   now fail closed;
 - the packaged Pi wheel contains the same arm metadata as the canonical config,
   while the runnable demo identifies its remaining numeric geometry as an
-  offline generic fixture.
+  offline generic fixture;
 - the hardware layer creates drivers only for physical arms marked installed,
   converts validated joint/gripper trajectories through per-channel pulse
   calibration, rejects frequency or mapping mismatches, and latches emergency
-  stops until an explicit rearm; `arm_1` is mapped to channels 0-3 and bimanual
-  startup is blocked because `arm_2` is not built.
+  stops until an explicit rearm; the replacement arm has no active channel map
+  until its wiring is confirmed.
 
 The arm gate now requires more than a successful Fusion export. Motion readiness
 also requires validated mesh scale, parent-link joint frames, kinematics,
@@ -138,8 +140,11 @@ collision geometry, actuator mapping, payload, and joint velocity limits. STL
 coordinates are explicitly treated as unitless until their bounds are checked.
 
 The remaining physical blockers are real inputs rather than silent software
-defaults: the Fusion export must still be run, the assembly and 50 g payload
-must be measured, servo mappings and speeds must be calibrated, collision
-geometry must be validated, and a hardware driver with an independent stop path
-must be supplied. The Baseten identifiers remain deployment placeholders and
+defaults: the Fusion export must still be run, payload and elbow deflection must
+be measured, servo pulse endpoints and speeds must be calibrated, collision
+geometry must be validated, and an independent stop path must be physically
+tested. The Baseten identifiers remain deployment placeholders and
 the offline state-space models remain deterministic integration fixtures.
+
+The complete model and dataset disposition is recorded in the
+[robot model training audit](training-audit.md).

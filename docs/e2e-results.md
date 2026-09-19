@@ -24,8 +24,9 @@ the wrong MiniLM selection, confirming that the defect was isolated to routing.
 
 ## Fix
 
-The production default is now `HybridRouter`. It computes MiniLM scores first
-and delegates to SmolLM2 when the top-two gap is below `0.05`. When users do not
+The directional regression is fixed by the optional `HybridRouter`. It computes
+MiniLM scores first and delegates to SmolLM2 when the top-two gap is below
+`0.05`. When users do not
 supply few-shot examples, it dynamically turns each expert description into one
 neutral labeled demonstration. This gives the small LM the label mapping and
 required output format without task-specific keyword rules. The demonstrations
@@ -34,8 +35,10 @@ refresh when registry metadata changes.
 The margin is an ambiguity heuristic, not a calibrated probability. `0.05` is
 an implementation default and should be tuned on representative deployment
 tasks. The hybrid strategy is an extension that composes the paper's two routing
-options. Explicit `--router embedding` preserves the paper's pure cosine-argmax
-baseline and still reproduces the original failure.
+options. The CLI and physical-AI production chain now default to the frozen
+prototype-embedding router; the paper's exact description-only baseline remains
+`--router embedding`. `--router hybrid` must be requested explicitly and still
+exists for this historical regression.
 
 For the unchanged failing instruction, CLI output now records:
 
@@ -77,18 +80,28 @@ The regular suite reports 144 passing unit/integration tests with 13 pretrained
 E2E cases skipped unless explicitly enabled. Its JUnit output is in
 `outputs/unit-deep-audit.xml` (SHA-256
 `eb7da9c99ae1ea9c026b908402efdd4e356978cd7425d8abb71a66ef4f3c363c`).
-The final wheel was installed into an isolated target and ran `physical-demo`
-outside the repository; it includes the bundled current-arm metadata. The wheel
+That historical wheel was installed into an isolated target and ran
+`physical-demo` outside the repository; it predates the four-DOF desktop-arm
+migration. The wheel
 is `outputs/wheel-arm1-single-control-final-20260919/moira_robotics-0.1.0-py3-none-any.whl`
 (SHA-256
 `ecca25075cf1470cb30b4f4c0515334735ad6f15807e9fe57f0c3728feb4faca`).
+
+## Four-DOF arm migration regression
+
+On 2026-09-19, the post-migration local suite completed with 169 passed and 13
+optional pretrained E2E cases skipped in 10.11 seconds. Ruff passed across
+`src`, `tests`, and `tools`. `physical-demo` completed the full offline layered
+flow, and `robot-model-check --verify-source` validated all 18 CAD/3MF source
+artifacts while correctly reporting the new physical profile as not
+motion-ready.
 
 ## Additional checks
 
 Both real models ran through `python -m moira evaluate` on the four illustrative
 `examples/routing_samples.jsonl` entries and returned accuracy 1.0, macro-F1 1.0,
 and zero invalid predictions. Direct CLI regression checks confirm that explicit
-embedding mode selects `left`, while the zero-example default hybrid selects
+embedding mode selects `left`, while explicit zero-example hybrid mode selects
 `right`.
 
 The 3,422,777,952-byte SmolLM2 checkpoint was verified against SHA-256

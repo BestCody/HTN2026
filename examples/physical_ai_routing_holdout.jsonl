@@ -1,0 +1,20 @@
+{"instruction":"Map every visible object, obstacle, and work surface into a spatial scene.","expert_id":"baseten-vision-scene"}
+{"instruction":"Propose a collision-free six-axis end-effector pose that can acquire the target jar.","expert_id":"baseten-grasp-pose"}
+{"instruction":"Convert the user's raw microphone recording to written words.","expert_id":"baseten-stt"}
+{"instruction":"Interpret this sentence against the observed objects and produce the intended physical goal.","expert_id":"baseten-voice-nlp"}
+{"instruction":"Speak this status message through the robot's audio output.","expert_id":"baseten-tts"}
+{"instruction":"Decompose the grounded request into an ordered plan that accounts for the user's preferences.","expert_id":"baseten-task-planner"}
+{"instruction":"Create a bounded one-arm waypoint sequence to relocate this ordinary solid item.","expert_id":"baseten-waypoint-policy"}
+{"instruction":"Coordinate the left and right grippers to move the long tray together.","expert_id":"baseten-bimanual-act"}
+{"instruction":"Decant water into the glass by controlling tilt and stream, then restore the bottle upright.","expert_id":"baseten-pour-policy"}
+{"instruction":"Mate the plug with its socket using precise alignment and compliant pushing.","expert_id":"baseten-insert-policy"}
+{"instruction":"Turn the threaded cap until it comes off the jar.","expert_id":"baseten-open-lid-policy"}
+{"instruction":"Move the tool into the person's reach and let go when their grip is secure.","expert_id":"baseten-handover-policy"}
+{"instruction":"Roll forward the generic joint and object state under this candidate control trajectory.","expert_id":"baseten-forward-dynamics"}
+{"instruction":"Forecast solid-body support, clearance, and collisions for the planned movement.","expert_id":"baseten-rigid-world"}
+{"instruction":"Model frictional contact and determine whether this grasp will retain or drop the object.","expert_id":"baseten-grasp-contact-world"}
+{"instruction":"Predict timing conflicts and shared loads between two arms following a coupled path.","expert_id":"baseten-bimanual-world"}
+{"instruction":"Forecast how the flexible cable bends and changes shape when the robot pulls it.","expert_id":"baseten-deformable-world"}
+{"instruction":"Estimate the nearby human's future reach and occupied workspace around this trajectory.","expert_id":"baseten-human-motion-world"}
+{"instruction":"Score these simulated futures according to goal progress, efficiency, and user preference.","expert_id":"baseten-task-reward"}
+{"instruction":"Inspect post-action video and telemetry to decide whether the commanded goal was completed.","expert_id":"baseten-outcome-verifier"}

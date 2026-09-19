@@ -1,9 +1,9 @@
 """Fusion 360 script that exports exact robot geometry and assembly metadata.
 
-Run this from Fusion's Scripts and Add-Ins dialog while
-``Current_Lightweight_Arm.f3d`` is the active design. The Fusion-only ``adsk``
-module is intentionally imported inside ``run`` so normal repository tooling can
-compile and inspect this file.
+Run this from Fusion's Scripts and Add-Ins dialog after importing the supplied
+``Sharma_Ishaan_robotAssem.SLDASM`` assembly. The Fusion-only ``adsk`` module is
+intentionally imported inside ``run`` so normal repository tooling can compile
+and inspect this file.
 """
 
 from __future__ import annotations
@@ -15,12 +15,13 @@ from pathlib import Path
 from typing import Any
 
 LINK_COMPONENTS = {
-    "01_FIXED_BASE",
-    "02_YAW_TURRET",
-    "03_UPPER_LINK",
-    "04_FOREARM_HEAD",
-    "05_MOVING_FINGER",
+    "fixed_base",
+    "turntable",
+    "upper_arm",
+    "forearm",
+    "end_effector",
 }
+JOINT_NAMES = {"J1_BASE_YAW", "J2_SHOULDER", "J3_ELBOW", "J4_END_EFFECTOR"}
 
 
 def _safe_name(value: str) -> str:
@@ -117,22 +118,24 @@ def run(context: Any) -> None:  # Fusion calls this entry point.
         ui = app.userInterface
         design = adsk.fusion.Design.cast(app.activeProduct)
         if design is None:
-            raise RuntimeError("Open Current_Lightweight_Arm.f3d before running this script")
+            raise RuntimeError("Import Sharma_Ishaan_robotAssem.SLDASM before running this script")
 
         dialog = ui.createFolderDialog()
         dialog.title = "Choose the MoIRA robot-model export directory"
         if dialog.showDialog() != adsk.core.DialogResults.DialogOK:
             return
-        destination = Path(dialog.folder) / "current_lightweight_arm_export"
+        destination = Path(dialog.folder) / "four_dof_desktop_arm_export"
         mesh_dir = destination / "meshes"
         mesh_dir.mkdir(parents=True, exist_ok=True)
 
         root = design.rootComponent
         export_manager = design.exportManager
         occurrences = []
+        raw_meshes = {}
         meshes = {}
         for occurrence in root.allOccurrences:
             component_name = occurrence.component.name
+            occurrence_path = _occurrence_name(occurrence)
             record = {
                 "name": occurrence.name,
                 "full_path": _occurrence_name(occurrence),
@@ -143,13 +146,19 @@ def run(context: Any) -> None:  # Fusion calls this entry point.
                 "grounded": bool(occurrence.isGrounded),
             }
             occurrences.append(record)
-            if component_name in LINK_COMPONENTS and component_name not in meshes:
-                path = mesh_dir / f"{_safe_name(component_name)}.stl"
-                options = export_manager.createSTLExportOptions(occurrence, str(path))
-                options.sendToPrintUtility = False
-                if not export_manager.execute(options):
-                    raise RuntimeError(f"Fusion failed to export {component_name}")
-                meshes[component_name] = str(path.relative_to(destination)).replace("\\", "/")
+            path = mesh_dir / f"{_safe_name(occurrence_path)}.stl"
+            options = export_manager.createSTLExportOptions(occurrence, str(path))
+            options.sendToPrintUtility = False
+            if not export_manager.execute(options):
+                raise RuntimeError(f"Fusion failed to export {occurrence_path}")
+            relative = str(path.relative_to(destination)).replace("\\", "/")
+            raw_meshes[occurrence_path] = relative
+            if component_name in LINK_COMPONENTS:
+                if component_name in meshes:
+                    raise RuntimeError(
+                        f"More than one occurrence uses canonical link name {component_name}"
+                    )
+                meshes[component_name] = relative
 
         parameters = []
         for parameter in design.userParameters:
@@ -173,17 +182,21 @@ def run(context: Any) -> None:  # Fusion calls this entry point.
             "occurrences": occurrences,
             "joints": joints,
             "meshes": meshes,
+            "raw_meshes": raw_meshes,
             # STL stores raw coordinates without a unit declaration. Validate the
             # resulting scale against the exported metric bounds before collision use.
             "mesh_units": "unitless",
             "mesh_scale_to_m": None,
             "expected_link_components": sorted(LINK_COMPONENTS),
-            "complete": LINK_COMPONENTS == set(meshes) and len(joints) >= 4,
+            "expected_joint_names": sorted(JOINT_NAMES),
+            "complete": LINK_COMPONENTS == set(meshes)
+            and all(any(item["name"].startswith(name) for item in joints) for name in JOINT_NAMES),
         }
         output_path = destination / "fusion_robot_export.json"
         output_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
         ui.messageBox(
-            f"Exported {len(meshes)} link meshes and {len(joints)} joints to:\n{destination}"
+            f"Exported {len(raw_meshes)} occurrence meshes, "
+            f"{len(meshes)} canonical links, and {len(joints)} joints to:\n{destination}"
         )
     except Exception as exc:
         message = traceback.format_exc()

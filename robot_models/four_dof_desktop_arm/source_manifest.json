@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "primary_assembly": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/Sharma_Ishaan_robotAssem.SLDASM",
+  "artifacts": [
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/gear 2.1.stp",
+      "bytes": 209683,
+      "sha256": "9b7786074bb04caa1deddde49a50e2e3cc1f5c92ed44efd085dedd966adfbadc",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/Gear Ring.SLDPRT",
+      "bytes": 59625,
+      "sha256": "8cfc7feba90bef866d248e694e808bf26f4c2fc77ac3460096d2e548e4ac2e89",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/gripper.SLDPRT",
+      "bytes": 68725,
+      "sha256": "842914c4882b95600e7d399af25429ecb9b1954b6507f7faa3b6f4d6ebcf7042",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/horn.SLDPRT",
+      "bytes": 167488,
+      "sha256": "458d2f0c5aeee58b18e4885ecc17f2a0e2c863fd97fa23ea906062aa8c5a9b4b",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/lever.SLDPRT",
+      "bytes": 46101,
+      "sha256": "42ad5aa24d4eadd7cb799274d83dd17f6ba5050aa2ca5e7a2c2498735de193b5",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/second arm.SLDPRT",
+      "bytes": 305835,
+      "sha256": "75bdbcf554f24b0518021f0e8109883ecdc27183a50c88a4cd24287f445f4990",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/ServoGear.SLDPRT",
+      "bytes": 165516,
+      "sha256": "059582978dfe96afa62f26710610a9091264cfdb3f609f6ec3a3f65e5d35a52f",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/servoMotorMG996R.SLDPRT",
+      "bytes": 426062,
+      "sha256": "dc1d635c1864cc77bdbf7435405c288e46e5812ba8736101c6c78f6035f5ade2",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/SG90 - Micro Servo 9g - Tower Pro.1.SLDPRT",
+      "bytes": 1740578,
+      "sha256": "04231581b395da7aa9a5b70d2548ccc2d7afc419972db07ab456d8c59a220e8b",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/SG90 - Micro Servo 9g - Tower Pro.2.SLDPRT",
+      "bytes": 205580,
+      "sha256": "80261d9b5d791713f01148d50d0bf2815433131bdda7d4a7a23d784e6d8c22e4",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/SG90 - Micro Servo 9g - Tower Pro.SLDASM",
+      "bytes": 680614,
+      "sha256": "c70ba9a427a04179c4fbae8c909949e53a426b36f22e11d192fbeb1007d1ddf8",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/Sharma_Ishaan_BallBearing_2.SLDPRT",
+      "bytes": 116912,
+      "sha256": "4f95b94f61ae03aa37800a5a531f1a3741e1c2b9e475ad2ea5d010d4f1e313f3",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/Sharma_Ishaan_base1.SLDPRT",
+      "bytes": 135336,
+      "sha256": "e30007f3fc4e23f45f8b80869711ffd39aa4a9d7936e41e4f94c8b716a02913e",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/Sharma_Ishaan_base2.SLDPRT",
+      "bytes": 143485,
+      "sha256": "63a68bfb9a90aa0428716711e6f0b8b5e64561f34498d3c87d9c0343fe8c1623",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/sharma_ishaan_Link1.SLDPRT",
+      "bytes": 235527,
+      "sha256": "86c2589b0e53d6a8d1cb458665f891c4fb479d990c114db85677daf824af63d7",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/Sharma_Ishaan_robotAssem.SLDASM",
+      "bytes": 1352901,
+      "sha256": "bc5ad54ea950fa068b1c95d26e907497d43277aab97aa67eb58ef610bfd86df5",
+      "purpose": "assembly_source"
+    },
+    {
+      "path": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/Sharma_Ishaan_rotateBase.SLDPRT",
+      "bytes": 272386,
+      "sha256": "3e6a5f9d851b596aca121266de7d238e2640e8a411200c29011203b654554b18",
+      "purpose": "cad_dependency"
+    },
+    {
+      "path": "../../Robotic+Arm.3mf",
+      "bytes": 1275470,
+      "sha256": "e693d19f0b99ef43a45988a602a4d2f35290945013fd3775e795f8ca8e9d6814",
+      "purpose": "print_plate_meshes"
+    }
+  ]
+}

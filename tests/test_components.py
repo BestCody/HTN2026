@@ -119,9 +119,14 @@ def test_remote_router_only_accepts_allow_list_and_has_no_failure_fallback():
         token="secret",
         http=http,
     )
-    decision = router.decide(Layer.VOICE, "voice.ground", {"device": "pi4"})
+    decision = router.decide(
+        Layer.VOICE,
+        "voice.ground",
+        {"device": "pi4", "routing_text": "Put my cup beside the plate"},
+    )
     assert decision.component_id == "intent" and decision.router == "remote"
     assert http.calls[0][1]["allowed_components"] == ["intent"]
+    assert http.calls[0][1]["context"]["routing_text"] == "Put my cup beside the plate"
     assert http.calls[0][2] == {"Authorization": "Bearer secret"}
 
     unavailable = RemoteComponentRouter(
@@ -141,6 +146,54 @@ def test_remote_router_only_accepts_allow_list_and_has_no_failure_fallback():
         invalid.decide(Layer.VOICE, "voice.ground")
 
 
+def test_remote_router_semantically_selects_across_compatible_capabilities():
+    registry = ComponentRegistry(ram_budget_mb=10)
+    registry.register(
+        ComponentSpec("single", Layer.MANIPULATION, ("manipulation.single",), "single"),
+        Echo,
+    )
+    registry.register(
+        ComponentSpec("dual", Layer.MANIPULATION, ("manipulation.dual",), "dual"),
+        Echo,
+    )
+    http = FakeHttp({"component_id": "dual"})
+    router = RemoteComponentRouter(registry, "https://router.example/v1/route", http=http)
+
+    decision = router.select_compatible(
+        Layer.MANIPULATION,
+        ("manipulation.single", "manipulation.dual"),
+        "Use the left and right arms together to carry the tray",
+        {"plan_id": "candidate-1"},
+    )
+
+    assert decision.component_id == "dual"
+    assert decision.capability == "manipulation.dual"
+    assert decision.router == "remote_semantic"
+    payload = http.calls[0][1]
+    assert payload["allowed_components"] == ["single", "dual"]
+    assert payload["context"]["routing_text"].startswith("Use the left and right")
+
+
+def test_semantic_component_selection_rejects_ids_outside_compatible_pool():
+    registry = ComponentRegistry(ram_budget_mb=10)
+    registry.register(
+        ComponentSpec("single", Layer.MANIPULATION, ("manipulation.single",), "single"),
+        Echo,
+    )
+    router = RemoteComponentRouter(
+        registry,
+        "https://router.example/v1/route",
+        http=FakeHttp({"component_id": "unapproved"}),
+    )
+
+    with pytest.raises(LookupError, match="outside the compatible pool"):
+        router.select_compatible(
+            Layer.MANIPULATION,
+            ("manipulation.single",),
+            "pick up the object",
+        )
+
+
 def test_baseten_endpoint_uses_production_environment_and_api_key():
     http = FakeHttp({"result": "ok"})
     endpoint = BasetenEndpoint("model_123", api_key="key", http=http)
@@ -149,6 +202,30 @@ def test_baseten_endpoint_uses_production_environment_and_api_key():
     assert url == "https://model-model_123.api.baseten.co/environments/production/predict"
     assert payload == {"input": "task"}
     assert headers == {"Authorization": "Api-Key key"}
+
+
+def test_baseten_endpoint_loads_ignored_local_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("BASETEN_API_KEY", raising=False)
+    (tmp_path / ".env").write_text("BASETEN_API_KEY=local-secret\n", encoding="utf-8")
+    http = FakeHttp({"result": "ok"})
+
+    endpoint = BasetenEndpoint("model_123", http=http)
+    endpoint.predict({"input": "task"})
+
+    assert http.calls[0][2] == {"Authorization": "Api-Key local-secret"}
+
+
+def test_process_baseten_key_takes_precedence_over_local_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("BASETEN_API_KEY", "process-secret")
+    (tmp_path / ".env").write_text("BASETEN_API_KEY=local-secret\n", encoding="utf-8")
+    http = FakeHttp({"result": "ok"})
+
+    endpoint = BasetenEndpoint("model_123", http=http)
+    endpoint.predict({"input": "task"})
+
+    assert http.calls[0][2] == {"Authorization": "Api-Key process-secret"}
 
 
 def test_baseten_component_decodes_scene_grounded_voice_nlp_contract():
@@ -218,19 +295,22 @@ def test_pi_manifest_is_complete_and_profile_is_bounded():
         PiRuntimeProfile(256, simulation_workers=3)
 
 
-def test_baseten_router_table_exactly_matches_edge_manifest():
-    data = json.loads(Path("examples/pi4_components.json").read_text(encoding="utf-8"))
-    expected = {
-        capability: component["id"]
-        for component in data["components"]
-        for capability in component["capabilities"]
-    }
+def test_baseten_router_uses_general_metadata_instead_of_a_capability_route_table():
+    expected = json.loads(
+        Path("examples/physical_ai_specialists.json").read_text(encoding="utf-8")
+    )
+    deployed = json.loads(
+        Path("deploy/baseten_router/specialists.json").read_text(encoding="utf-8")
+    )
+    assert deployed == expected
+
     module = ast.parse(Path("deploy/baseten_router/router.py").read_text(encoding="utf-8"))
-    route_assignment = next(
-        node
+    assigned_names = {
+        target.id
         for node in module.body
         if isinstance(node, ast.Assign)
-        and any(isinstance(target, ast.Name) and target.id == "ROUTES" for target in node.targets)
-    )
-    routes = ast.literal_eval(route_assignment.value)
-    assert routes == expected
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    assert "ROUTES" not in assigned_names
+    assert "MODEL_ID" in assigned_names

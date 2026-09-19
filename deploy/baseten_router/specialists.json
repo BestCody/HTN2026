@@ -1,0 +1,270 @@
+{
+  "experts": [
+    {
+      "id": "baseten-vision-scene",
+      "simple": "Detect, classify, segment, and estimate the camera-frame positions of visible objects, obstacles, people, and workspace surfaces.",
+      "abstract": "Convert visual observations into a structured spatial scene representation for downstream physical reasoning.",
+      "interfaces": [
+        "perception.scene.v1"
+      ],
+      "routing_examples": [
+        "Find every object on the table and report its position in the camera view.",
+        "Segment the cup, block, person, and obstacles in this image and construct a scene map.",
+        "Turn these webcam frames into labeled objects, surfaces, and spatial coordinates."
+      ]
+    },
+    {
+      "id": "baseten-grasp-pose",
+      "simple": "Generate collision-aware six-degree-of-freedom gripper poses and end-effector contact locations for lifting a specified object; do not predict contact forces.",
+      "abstract": "Propose end-effector transforms and approach geometry for acquiring a target object.",
+      "interfaces": [
+        "grasp.pose.v1"
+      ],
+      "routing_examples": [
+        "Suggest a stable six-axis gripper pose for picking up the detected bottle.",
+        "Where should the end effector contact this object so it can be lifted without collision?",
+        "Produce candidate grasp transforms for the target object's observed geometry."
+      ]
+    },
+    {
+      "id": "baseten-stt",
+      "simple": "Transcribe microphone audio containing a spoken command into text without interpreting or executing the command.",
+      "abstract": "Convert human speech waveforms into written text without interpreting intent.",
+      "interfaces": [
+        "voice.transcribe.v1"
+      ],
+      "routing_examples": [
+        "Convert this microphone recording into the words the user spoke.",
+        "Transcribe the incoming voice waveform without deciding what action it requests.",
+        "Write down the spoken command contained in this audio clip."
+      ]
+    },
+    {
+      "id": "baseten-voice-nlp",
+      "simple": "Interpret a command transcript, ground mentioned objects in the current scene, and extract action, targets, constraints, or clarification needs.",
+      "abstract": "Parse situated text into a scene-grounded physical intent, target, and constraints.",
+      "interfaces": [
+        "voice.intent.v1"
+      ],
+      "routing_examples": [
+        "Resolve what 'bring me that one' refers to using the transcript and visible objects.",
+        "Extract the requested action, object, and constraints from this situated utterance.",
+        "Ground the user's words to scene object IDs or ask for clarification when ambiguous."
+      ]
+    },
+    {
+      "id": "baseten-tts",
+      "simple": "Synthesize audible speech from response text for confirmations, questions, warnings, and task completion messages.",
+      "abstract": "Convert written dialogue responses into synthesized spoken audio.",
+      "interfaces": [
+        "voice.synthesize.v1"
+      ],
+      "routing_examples": [
+        "Read this completion response aloud to the user.",
+        "Generate spoken audio for the clarification question.",
+        "Turn the assistant's warning text into a natural voice response."
+      ]
+    },
+    {
+      "id": "baseten-task-planner",
+      "simple": "Create and compare ordered multi-step task plans from grounded goals, workspace state, user accommodations, personal constraints, and predicted candidate outcomes.",
+      "abstract": "Decompose a physical goal into feasible steps under workspace and user constraints, then choose the strongest complete plan.",
+      "interfaces": [
+        "planning.task.v1"
+      ],
+      "routing_examples": [
+        "Break the grounded request into ordered physical steps and propose several complete plans.",
+        "Choose the best task plan after comparing the simulated outcomes of all candidates.",
+        "Plan how to achieve this goal while respecting the user's accommodation and workspace constraints."
+      ]
+    },
+    {
+      "id": "baseten-waypoint-policy",
+      "simple": "Single-arm waypoint policy. Planner actions: reach, pick, grasp, lift, move, carry, place. Arm pattern: exactly one of left or right. Use for ordinary rigid-object transport with bounded waypoints.",
+      "abstract": "Produce general single-manipulator waypoint actions for routine rigid-object transport.",
+      "interfaces": [
+        "manipulation.policy.v1"
+      ],
+      "routing_examples": [
+        "Generate single-arm waypoint actions to pick up the block and place it in the tray.",
+        "Move this rigid tabletop item from its current pose to the requested destination with one arm.",
+        "Produce bounded reach, grasp, carry, and release action chunks for an ordinary object.",
+        "Candidate steps: action=pick and place, arms=right, target=object"
+      ]
+    },
+    {
+      "id": "baseten-bimanual-act",
+      "simple": "Bimanual two-arm policy. Planner actions: bimanual, bimanual lift, bimanual carry, coordinated carry, stabilize together. Arm pattern: left+right or both arms. Use for long, broad, wide, or heavy shared loads.",
+      "abstract": "Coordinate both manipulators when a task requires coupled two-arm control.",
+      "interfaces": [
+        "manipulation.policy.v1"
+      ],
+      "routing_examples": [
+        "Have both arms lift the wide object together while sharing its load.",
+        "Generate synchronized left and right arm commands to stabilize and carry one item.",
+        "Coordinate two manipulators so they reposition this large object without twisting it.",
+        "Candidate steps: action=bimanual carry, arms=left+right, target=wide object"
+      ]
+    },
+    {
+      "id": "baseten-pour-policy",
+      "simple": "Pouring policy. Planner actions: pour, decant, fill. Command grasp, tip or tilt, regulate stream or flow, and return upright while transferring material between containers.",
+      "abstract": "Control container transfer tasks whose success depends on a regulated pouring motion.",
+      "interfaces": [
+        "manipulation.policy.v1"
+      ],
+      "routing_examples": [
+        "Tilt the source cup and regulate the motion to pour into the destination container.",
+        "Generate the grasp, controlled pour, and upright return sequence.",
+        "Transfer liquid between these containers without spilling it.",
+        "Candidate steps: action=pour, arms=right, target=container"
+      ]
+    },
+    {
+      "id": "baseten-insert-policy",
+      "simple": "Insertion policy. Planner actions: insert, plug in, mate, seat. Align and compliantly push a peg, plug, part, or tool into a hole, socket, slot, or narrow opening.",
+      "abstract": "Perform precision mating of a part with a narrow opening through alignment and constrained insertion.",
+      "interfaces": [
+        "manipulation.policy.v1"
+      ],
+      "routing_examples": [
+        "Align the plug with its socket and generate a compliant insertion motion.",
+        "Place the peg into the matching hole using precision alignment and constrained motion.",
+        "Generate actions for mating this part with the narrow opening.",
+        "Candidate steps: action=insert, arms=right, target=part"
+      ]
+    },
+    {
+      "id": "baseten-open-lid-policy",
+      "simple": "Closure policy. Planner actions: open lid, close lid, open cap, unscrew, open drawer, open door. Twist or remove a threaded closure, lift a lid, pull a drawer, or swing a door.",
+      "abstract": "Manipulate a lid, cap, door, drawer, or articulated closure to change its open or closed state.",
+      "interfaces": [
+        "manipulation.policy.v1"
+      ],
+      "routing_examples": [
+        "Open the hinged lid by establishing contact and following its articulated path.",
+        "Generate the manipulation needed to close the drawer completely.",
+        "Unscrew or lift the cap so the container changes from closed to open.",
+        "Candidate steps: action=open lid, arms=right, target=container"
+      ]
+    },
+    {
+      "id": "baseten-handover-policy",
+      "simple": "Human handover policy. Planner actions: handover, give, pass, offer, receive. Present an object within a person's reach, release after their grip is secure, or accept an item from a human hand.",
+      "abstract": "Transfer an object safely between a robot and a nearby human.",
+      "interfaces": [
+        "manipulation.policy.v1"
+      ],
+      "routing_examples": [
+        "Present the object to the person and release it only after they take hold.",
+        "Generate a safe robot-to-human transfer with approach, grip release, and retreat.",
+        "Receive the item from the user's hand using a human-aware handover motion.",
+        "Candidate steps: action=handover, arms=right, target=object for person"
+      ]
+    },
+    {
+      "id": "baseten-forward-dynamics",
+      "simple": "Predict generic robot joint and object state transitions from a proposed action over the next few seconds; use when no contact, human, dual-arm, rigid-collision, or deformable specialist is requested.",
+      "abstract": "Estimate future robot joints and object poses caused by a candidate control trajectory.",
+      "interfaces": [
+        "world.predict.v1"
+      ],
+      "routing_examples": [
+        "Given the current joints and proposed controls, estimate the resulting robot and object state.",
+        "Predict the state transition produced by this candidate action sequence over 2.5 seconds.",
+        "Forecast future joint positions and object poses from state plus action."
+      ]
+    },
+    {
+      "id": "baseten-rigid-world",
+      "simple": "Predict collisions, clearance, support, and displacement for solid non-deformable rigid objects under candidate robot actions; exclude liquid, cloth, cable, and other shape-changing material motion.",
+      "abstract": "Predict collision, support, clearance, and motion for non-deformable solid bodies and obstacles.",
+      "interfaces": [
+        "world.predict.v1"
+      ],
+      "routing_examples": [
+        "Simulate collisions, clearances, and motion of the solid objects along this trajectory.",
+        "Predict how rigid bodies and obstacles will move when the arm executes this plan.",
+        "Evaluate the candidate using non-deformable object physics and support contacts."
+      ]
+    },
+    {
+      "id": "baseten-grasp-contact-world",
+      "simple": "Predict gripper contact forces, friction, slip, retention, and grasp stability for a proposed grasp or carried object.",
+      "abstract": "Model contact mechanics that determine whether an object remains securely grasped.",
+      "interfaces": [
+        "world.predict.v1"
+      ],
+      "routing_examples": [
+        "Estimate contact force, friction, and whether the object will slip from the fingers.",
+        "Predict whether this proposed grasp remains stable while the arm carries the item.",
+        "Model gripper-object contact and retention for this grasp trajectory."
+      ]
+    },
+    {
+      "id": "baseten-bimanual-world",
+      "simple": "Predict dual-arm coupling: load sharing, relative timing, forces, and interference between two manipulators during a proposed joint action; do not generate arm commands.",
+      "abstract": "Forecast short-horizon forces and interference caused by coordinated dual-manipulator motion; this model does not generate commands.",
+      "interfaces": [
+        "world.predict.v1"
+      ],
+      "routing_examples": [
+        "Forecast load sharing and interference between the two arms during this joint motion.",
+        "Predict coupled two-manipulator forces for the synchronized candidate trajectory.",
+        "Model how the left and right arms affect one another while jointly carrying the object."
+      ]
+    },
+    {
+      "id": "baseten-deformable-world",
+      "simple": "Predict shape-changing material physics under a proposed action: liquid flow, cloth folds, flexible bags, cables, food deformation, and other non-rigid motion; do not generate robot commands.",
+      "abstract": "Forecast fluids and non-rigid materials whose shape or distribution changes during manipulation.",
+      "interfaces": [
+        "world.predict.v1"
+      ],
+      "routing_examples": [
+        "Predict how the liquid will flow as the container tilts.",
+        "Simulate the changing shape of this cloth, bag, or cable during manipulation.",
+        "Forecast non-rigid material motion and deformation for the proposed action."
+      ]
+    },
+    {
+      "id": "baseten-human-motion-world",
+      "simple": "Predict nearby human motion, reach, occupancy, and possible interference with a proposed robot trajectory.",
+      "abstract": "Forecast a nearby person's reach, movement, and occupied space around the robot.",
+      "interfaces": [
+        "world.predict.v1"
+      ],
+      "routing_examples": [
+        "Predict where the nearby person may reach or move during the next few seconds.",
+        "Forecast human occupancy so the proposed robot path can avoid interference.",
+        "Model short-horizon motion of the user standing beside the robot."
+      ]
+    },
+    {
+      "id": "baseten-task-reward",
+      "simple": "Score predicted candidate outcomes for task progress, goal completion, efficiency, and preference satisfaction.",
+      "abstract": "Assign a utility score to simulated futures relative to the requested goal.",
+      "interfaces": [
+        "reward.score.v1"
+      ],
+      "routing_examples": [
+        "Assign a task-progress score to each predicted future and rank goal completion.",
+        "Evaluate the utility of this simulated outcome using success, efficiency, and preferences.",
+        "Score how well the candidate future accomplishes the requested goal."
+      ]
+    },
+    {
+      "id": "baseten-outcome-verifier",
+      "simple": "Compare requested goals with before-and-after camera observations and telemetry to determine whether physical execution succeeded.",
+      "abstract": "Compare before-and-after observations and telemetry to verify physical task completion.",
+      "interfaces": [
+        "outcome.verify.v1"
+      ],
+      "routing_examples": [
+        "Compare the before and after images to confirm that the object reached its destination.",
+        "Determine from post-action camera evidence and telemetry whether execution succeeded.",
+        "Verify that the physical result satisfies the requested task rather than merely completing motion."
+      ]
+    }
+  ]
+}

@@ -48,6 +48,7 @@ from .physical import (
     WorldModelPrediction,
     WorldState,
     capture_frames,
+    policy_routing_text,
 )
 from .pi import PiRuntimeProfile, inspect_host
 from .robot_config import (
@@ -56,15 +57,17 @@ from .robot_config import (
     RobotJoint,
     RobotModel,
     ServoCalibration,
-    load_bundled_current_arm_model,
+    load_bundled_robot_model,
     load_robot_model,
 )
 from .robot_runtime import robot_bound_local_factories
+from .robot_sources import ThreeMFReport, inspect_3mf
 from .routing import (
     EmbeddingRouter,
     HybridRouter,
     PromptExample,
     PromptRouter,
+    PrototypeEmbeddingRouter,
     RoutingDecision,
     RoutingError,
 )
@@ -119,6 +122,7 @@ __all__ = [
     "PredictedState",
     "PromptExample",
     "PromptRouter",
+    "PrototypeEmbeddingRouter",
     "RoutingDecision",
     "RoutingError",
     "RemoteComponentRouter",
@@ -131,15 +135,18 @@ __all__ = [
     "SimulationOutcome",
     "SlipEstimate",
     "TactileSample",
+    "ThreeMFReport",
     "TaskRequest",
     "WorldState",
     "WorldModelPrediction",
     "capture_frames",
     "inspect_host",
-    "load_bundled_current_arm_model",
+    "inspect_3mf",
+    "load_bundled_robot_model",
     "load_robot_model",
     "pca9685_arm_drivers",
     "pca9685_installed_arm_drivers",
+    "policy_routing_text",
     "robot_bound_local_factories",
     "AdafruitPCA9685Device",
 ]

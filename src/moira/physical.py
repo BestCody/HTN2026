@@ -15,6 +15,15 @@ if TYPE_CHECKING:
 from .components import ComponentDecision, ComponentRegistry, ComponentRouter, Layer
 from .pi import PiRuntimeProfile
 
+MANIPULATION_POLICY_CAPABILITIES = (
+    "manipulation.skill.waypoint",
+    "manipulation.bimanual",
+    "manipulation.skill.pour",
+    "manipulation.skill.insert",
+    "manipulation.skill.open_lid",
+    "manipulation.skill.handover",
+)
+
 
 def _nonempty(value: Any, name: str) -> None:
     if not isinstance(value, str) or not value.strip():
@@ -176,6 +185,25 @@ class CandidatePlan:
             raise ValueError("Candidate plans need typed steps")
         if len({step.id for step in self.steps}) != len(self.steps):
             raise ValueError("Candidate plan step IDs must be unique")
+
+
+def policy_routing_text(transcript: str, candidate: CandidatePlan) -> str:
+    """Build the semantic routing query from grounded, planner-produced data."""
+    _nonempty(transcript, "Routing transcript")
+    if not isinstance(candidate, CandidatePlan):
+        raise TypeError("candidate must be a CandidatePlan")
+    steps = "; ".join(
+        (
+            f"action={step.action}, arms={'+'.join(step.arms)}, "
+            f"target={step.target_object_id or 'workspace'}"
+        )
+        for step in candidate.steps
+    )
+    return (
+        f"User goal: {transcript}\n"
+        f"Candidate rationale: {candidate.rationale}\n"
+        f"Candidate steps: {steps}"
+    )
 
 
 @dataclass(frozen=True)
@@ -1523,8 +1551,27 @@ class PhysicalAI:
         ) -> Any:
             current_context = {**route_context, **dict(context or {})}
             decision = self.router.decide(layer, capability, current_context)
+
+            return invoke_decision(
+                decision,
+                payload,
+                expected,
+                local_authority=local_authority,
+            )
+
+        def invoke_decision(
+            decision: ComponentDecision,
+            payload: Any,
+            expected: type,
+            *,
+            local_authority: bool = False,
+        ) -> Any:
+            if not isinstance(decision, ComponentDecision):
+                raise TypeError("Router must return a ComponentDecision")
             if local_authority and decision.runtime == "remote":
-                raise RuntimeError(f"{capability} must remain on the robot-side safety boundary")
+                raise RuntimeError(
+                    f"{decision.capability} must remain on the robot-side safety boundary"
+                )
             with decisions_lock:
                 decisions.append(decision)
             result = self.registry.invoke(decision, payload)
@@ -1536,10 +1583,20 @@ class PhysicalAI:
             return result
 
         if request.audio is not None:
-            transcript = invoke(Layer.VOICE, "voice.transcribe", SpeechInput(request.audio), str)
+            transcript = invoke(
+                Layer.VOICE,
+                "voice.transcribe",
+                SpeechInput(request.audio),
+                str,
+                context={"routing_text": "Transcribe the spoken robot command."},
+            )
         else:
             transcript = request.instruction
         _nonempty(transcript, "Transcript")
+        # The frozen MoIRA router compares this task text with descriptions of
+        # every contract-compatible specialist. The edge allow-list remains the
+        # authority over which components can ever be selected.
+        route_context["routing_text"] = transcript
         workspace = dict(request.workspace or {})
         world = invoke(
             Layer.PERCEPTION,
@@ -1701,7 +1758,8 @@ class PhysicalAI:
             if not grounded_targets <= candidate_targets:
                 raise ValueError("Planner omitted a target grounded by voice NLP")
 
-        def policy_capability(candidate: CandidatePlan) -> str:
+        def fixture_policy_capability(candidate: CandidatePlan) -> str:
+            """Dispatch the dependency-free offline fixture without an ML router."""
             actions = {step.action.lower().replace(" ", "_") for step in candidate.steps}
             for action, capability in (
                 ("pour", "manipulation.skill.pour"),
@@ -1741,20 +1799,32 @@ class PhysicalAI:
             SafetyAssessment,
             SimulationOutcome,
         ]:
-            policy = invoke(
-                Layer.MANIPULATION,
-                policy_capability(candidate),
-                PolicyInput(
-                    candidate,
-                    world,
-                    personal,
-                    grasps,
-                    request.frames,
-                    request.robot_state,
-                ),
-                PolicyPlan,
-                context={"plan_id": candidate.id},
+            policy_input = PolicyInput(
+                candidate,
+                world,
+                personal,
+                grasps,
+                request.frames,
+                request.robot_state,
             )
+            routing_text = policy_routing_text(transcript, candidate)
+            semantic_select = getattr(self.router, "select_compatible", None)
+            if callable(semantic_select):
+                decision = semantic_select(
+                    Layer.MANIPULATION,
+                    MANIPULATION_POLICY_CAPABILITIES,
+                    routing_text,
+                    {**route_context, "plan_id": candidate.id},
+                )
+                policy = invoke_decision(decision, policy_input, PolicyPlan)
+            else:
+                policy = invoke(
+                    Layer.MANIPULATION,
+                    fixture_policy_capability(candidate),
+                    policy_input,
+                    PolicyPlan,
+                    context={"plan_id": candidate.id, "routing_text": routing_text},
+                )
             validate_policy_for_candidate(candidate, policy)
             kinematics = invoke(
                 Layer.KINEMATICS,

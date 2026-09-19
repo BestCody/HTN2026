@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/basetenlabs/truss/main/truss/config.schema.json
+description: Low-latency English command transcription for the MoIRA physical-AI runtime.
+model_name: MoIRA Whisper Large V3 Turbo
+python_version: py311
+model_metadata:
+  model_id: /models/faster-whisper-large-v3-turbo
+  pretty_name: MoIRA Whisper Large V3 Turbo
+  tags:
+    - speech-recognition
+    - physical-ai
+weights:
+  - source: hf://mobiuslabsgmbh/faster-whisper-large-v3-turbo@0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf
+    mount_location: /models/faster-whisper-large-v3-turbo
+requirements:
+  - faster-whisper==1.2.1
+resources:
+  instance_type: L4:4x16

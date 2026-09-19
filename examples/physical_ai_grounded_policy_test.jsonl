@@ -1,0 +1,6 @@
+{"instruction":"User goal: Put the cube on the tray. Candidate rationale: ordinary rigid-object transport. Candidate steps: action=pick, arms=right, target=cube; action=place, arms=right, target=cube","expert_id":"baseten-waypoint-policy"}
+{"instruction":"User goal: Move the broad package. Candidate rationale: share its load across two manipulators. Candidate steps: action=bimanual carry, arms=left+right, target=package","expert_id":"baseten-bimanual-act"}
+{"instruction":"User goal: Fill the glass. Candidate rationale: transfer liquid with a controlled stream. Candidate steps: action=pour, arms=right, target=bottle","expert_id":"baseten-pour-policy"}
+{"instruction":"User goal: Connect the plug. Candidate rationale: precise compliant mating. Candidate steps: action=insert, arms=right, target=plug","expert_id":"baseten-insert-policy"}
+{"instruction":"User goal: Remove the jar top. Candidate rationale: change the threaded closure state. Candidate steps: action=open lid, arms=right, target=jar","expert_id":"baseten-open-lid-policy"}
+{"instruction":"User goal: Pass me the screwdriver. Candidate rationale: present the tool to the nearby person. Candidate steps: action=handover, arms=right, target=screwdriver","expert_id":"baseten-handover-policy"}

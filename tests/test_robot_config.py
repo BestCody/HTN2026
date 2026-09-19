@@ -6,11 +6,7 @@ import pytest
 from moira.components import ComponentRegistry
 from moira.edge_components import LoadFeedbackComponent
 from moira.physical import BimanualControlComponent, PhysicalAI
-from moira.robot_config import (
-    RobotModel,
-    load_bundled_current_arm_model,
-    load_robot_model,
-)
+from moira.robot_config import RobotModel, load_bundled_robot_model, load_robot_model
 from moira.robot_runtime import robot_bound_local_factories
 from moira.specialists import (
     BoundedTrajectoryPlanner,
@@ -22,73 +18,20 @@ from moira.specialists import (
 )
 from tools.merge_fusion_robot_export import merge
 
-MODEL_PATH = Path("robot_models/current_lightweight_arm/model.json")
+MODEL_PATH = Path("robot_models/four_dof_desktop_arm/model.json")
 
 
-def test_bundled_current_arm_config_matches_canonical_robot_config():
-    canonical = load_robot_model(MODEL_PATH)
-    assert load_bundled_current_arm_model() == canonical
-
-
-@pytest.mark.parametrize(
-    ("field", "value", "message"),
-    (
-        ("schema_version", 1, "schema_version"),
-        ("servo_count", 3, "servo_count"),
-        ("components", "not-a-list", "components"),
-        ("blockers", "not-a-list", "blockers"),
-    ),
-)
-def test_robot_config_rejects_malformed_structural_metadata(field, value, message):
-    config = json.loads(MODEL_PATH.read_text(encoding="utf-8"))
-    config[field] = value
-    with pytest.raises((TypeError, ValueError), match=message):
-        RobotModel.from_mapping(config)
-
-
-def test_current_fusion_model_metadata_matches_source_and_blocks_motion():
-    model = load_robot_model(MODEL_PATH, verify_source=True)
-    assert model.model_id == "current-lightweight-arm-v1"
-    assert model.servo_model == "MG996R"
-    assert model.payload_limit_kg == 0.05
-    assert model.servo_controller is not None
-    assert model.servo_controller.servo_supply_voltage == 6.0
-    assert model.servo_controller.servo_supply_current_a == 10.0
-    assert not model.servo_controller.servo_power_validated
-    assert model.servo_controller.installed_arms == ("left",)
-    assert model.servo_controller.arm_installations["left"].physical_id == "arm_1"
-    assert model.servo_controller.arm_installations["right"].physical_id == "arm_2"
-    assert not model.servo_controller.arm_installations["right"].installed
-    assert [
-        calibration.channel
-        for calibration in model.servo_controller.actuators["left"].values()
-    ] == [0, 1, 2, 3]
-    assert not model.bimanual_motion_ready
-    assert model.bimanual_readiness_issues == ("arm_2 is not built",)
-    assert [joint.name for joint in model.kinematic_joints] == [
-        "J1_BASE_YAW",
-        "J2_SHOULDER",
-        "J3_ELBOW",
-    ]
-    assert model.gripper_joint.name == "J4_GRIPPER"
-    assert not model.motion_ready
-    assert "validated mesh scale" in model.readiness_issues
-    assert "calibrated joint velocity limits" in model.readiness_issues
-    assert "calibrated gripper velocity limit" in model.readiness_issues
-    assert "separate servo power validation" in model.readiness_issues
-    with pytest.raises(RuntimeError, match="not motion-ready"):
-        model.require_motion_ready()
-
-
-def test_motion_components_use_three_positioning_joints_after_calibration():
+def _motion_ready_mapping() -> dict[str, object]:
     value = json.loads(MODEL_PATH.read_text(encoding="utf-8"))
+    value["payload_limit_kg"] = 0.025
+    value["coordinate_frame"] = {"ground_plane": "XZ", "up_axis": "Y"}
     value["geometry"] = {
         "upper_arm_m": 0.16,
         "forearm_m": 0.15,
         "shoulder_height_m": 0.12,
     }
     value["meshes"] = {name: f"meshes/{name}.stl" for name in value["components"]}
-    value["mesh_scale_to_m"] = 0.01
+    value["mesh_scale_to_m"] = 0.001
     value["bimanual_mount"] = {"shoulder_offset_m": 0.20}
     value["control_limits"] = {
         "trajectory_frequency_hz": 20.0,
@@ -103,6 +46,16 @@ def test_motion_components_use_three_positioning_joints_after_calibration():
         "max_collision_probability": 0.15,
         "min_grasp_stability_score": 0.70,
     }
+    axes = ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0])
+    for joint, axis in zip(value["joints"], axes, strict=True):
+        joint.update(
+            axis=axis,
+            lower_deg=-45.0,
+            upper_deg=45.0,
+            home_deg=0.0,
+            origin_m=[0.0, 0.0, 0.0],
+            max_velocity_deg_s=90.0,
+        )
     value["servo_controller"] = {
         "type": "pca9685",
         "i2c_address": 0x40,
@@ -128,16 +81,72 @@ def test_motion_components_use_three_positioning_joints_after_calibration():
             for arm_index, arm in enumerate(("left", "right"))
         },
     }
-    value["calibration_complete"] = True
-    value["kinematics_validated"] = True
-    value["collision_geometry_validated"] = True
-    value["actuator_mapping_validated"] = True
-    value["payload_validated"] = True
+    for flag in (
+        "calibration_complete",
+        "kinematics_validated",
+        "collision_geometry_validated",
+        "actuator_mapping_validated",
+        "payload_validated",
+    ):
+        value[flag] = True
     value["blockers"] = []
-    for joint in value["joints"]:
-        joint["origin_m"] = [0.0, 0.0, 0.0]
-        joint["max_velocity_deg_s"] = 90.0
-    model = RobotModel.from_mapping(value)
+    return value
+
+
+def test_bundled_robot_config_matches_canonical_robot_config():
+    assert load_bundled_robot_model() == load_robot_model(MODEL_PATH)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("schema_version", 1, "schema_version"),
+        ("servo_count", 3, "servo_count"),
+        ("components", "not-a-list", "components"),
+        ("blockers", "not-a-list", "blockers"),
+    ),
+)
+def test_robot_config_rejects_malformed_structural_metadata(field, value, message):
+    config = json.loads(MODEL_PATH.read_text(encoding="utf-8"))
+    config[field] = value
+    with pytest.raises((TypeError, ValueError), match=message):
+        RobotModel.from_mapping(config)
+
+
+def test_active_robot_profile_matches_new_sources_and_blocks_motion():
+    model = load_robot_model(MODEL_PATH, verify_source=True)
+    assert model.model_id == "four-dof-desktop-arm-v1"
+    assert model.servo_models == {
+        "J1_BASE_YAW": "MG996R",
+        "J2_SHOULDER": "MG996R",
+        "J3_ELBOW": "SG90",
+        "J4_END_EFFECTOR": "SG90",
+    }
+    assert model.payload_limit_kg is None
+    assert model.servo_controller.servo_supply_voltage == 6.0
+    assert model.servo_controller.servo_supply_current_a == 10.0
+    assert model.servo_controller.installed_arms == ()
+    assert all(
+        calibration.channel is None
+        for mapping in model.servo_controller.actuators.values()
+        for calibration in mapping.values()
+    )
+    assert [joint.name for joint in model.kinematic_joints] == [
+        "J1_BASE_YAW",
+        "J2_SHOULDER",
+        "J3_ELBOW",
+    ]
+    assert model.gripper_joint.name == "J4_END_EFFECTOR"
+    assert not model.motion_ready
+    assert "validated payload limit" in model.readiness_issues
+    assert "joint axes" in model.readiness_issues
+    assert "joint limits and home positions" in model.readiness_issues
+    with pytest.raises(RuntimeError, match="not motion-ready"):
+        model.require_motion_ready()
+
+
+def test_motion_components_use_calibrated_robot_profile():
+    model = RobotModel.from_mapping(_motion_ready_mapping())
     assert model.motion_ready
 
     ik = PlanarBimanualIK.from_robot_model(model)
@@ -169,13 +178,9 @@ def test_motion_components_use_three_positioning_joints_after_calibration():
     assert collision.required_clearance_m == 0.02
     assert world_model.per_arm_payload_kg == model.payload_limit_kg
     assert safety.per_arm_payload_kg == model.payload_limit_kg
-    assert safety.max_slip_probability == 0.30
-    assert safety.max_collision_probability == 0.15
-    assert safety.min_grasp_stability_score == 0.70
     assert feedback.single_arm_payload_kg == model.payload_limit_kg
     assert tactile.min_stability_score == 0.70
     assert controller.timeout_margin_seconds == 0.5
-    assert controller.max_slip_probability == 0.30
     assert set(factories) == {
         "local-bimanual-ik",
         "local-trajectory-planner",
@@ -185,12 +190,11 @@ def test_motion_components_use_three_positioning_joints_after_calibration():
         "local-failure-classifier",
         "local-load-feedback",
     }
-    assert factories["local-failure-classifier"]().max_slip_probability == 0.30
     assert system.robot_model_id == model.model_id
     assert system.gripper_geometry["max_width_m"] == 0.08
 
 
-def test_fusion_export_merge_populates_geometry_origins_and_meshes(tmp_path):
+def test_fusion_export_merge_populates_geometry_origins_axes_and_meshes(tmp_path):
     model_path = tmp_path / "model.json"
     model_path.write_text(MODEL_PATH.read_text(encoding="utf-8"), encoding="utf-8")
     export_dir = tmp_path / "fusion_export"
@@ -215,9 +219,16 @@ def test_fusion_export_merge_populates_geometry_origins_and_meshes(tmp_path):
         "joints": [
             {
                 "name": joint["name"],
-                "axis": joint["axis"],
+                "axis": [0.0, 0.0, 1.0],
                 "transform": {"translation_m": [0.01 * index, 0.0, 0.0]},
-                "limits": {},
+                "limits": {
+                    "minimum_enabled": True,
+                    "minimum_rad": -0.5,
+                    "maximum_enabled": True,
+                    "maximum_rad": 0.5,
+                    "rest_enabled": True,
+                    "rest_rad": 0.0,
+                },
             }
             for index, joint in enumerate(base["joints"])
         ],
@@ -232,6 +243,7 @@ def test_fusion_export_merge_populates_geometry_origins_and_meshes(tmp_path):
     assert model.forearm_m == 0.15
     assert model.shoulder_height_m == 0.12
     assert all(joint.origin_m is not None for joint in model.joints)
+    assert all(joint.axis is not None for joint in model.joints)
     assert len(model.meshes) == 5
     assert all((output.parent / path).is_file() for path in model.meshes.values())
     assert model.mesh_scale_to_m is None

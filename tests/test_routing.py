@@ -9,6 +9,7 @@ from moira import (
     ExpertRegistry,
     PromptExample,
     PromptRouter,
+    PrototypeEmbeddingRouter,
     RoutingDecision,
     RoutingError,
 )
@@ -44,6 +45,35 @@ def test_cosine_not_unnormalized_dot_product_and_cache(registry):
     registry.replace(replace(registry.get("b"), simple="first description"))
     assert router.route("task").expert_id == "a"  # deterministic tie
     assert encoder.calls[-2] == ["first description", "first description"]
+
+
+def test_prototype_router_uses_expert_owned_examples_without_a_routing_head():
+    registry = ExpertRegistry(
+        [
+            Expert(
+                "dual",
+                "coordinate manipulators",
+                "bimanual control",
+                interfaces=("policy.v1",),
+                routing_examples=("action=bimanual carry, arms=left+right",),
+            ),
+            Expert("single", "move an object", "ordinary transport"),
+        ]
+    )
+    encoder = Encoder(
+        {
+            "coordinate manipulators": [1, 0],
+            "action=bimanual carry, arms=left+right": [0, 1],
+            "move an object": [1, 0],
+            "task": [0, 1],
+        }
+    )
+
+    decision = PrototypeEmbeddingRouter(registry, encoder).route("task")
+
+    assert decision.expert_id == "dual"
+    assert decision.strategy == "prototype_embedding"
+    assert dict(decision.scores)["dual"] == pytest.approx(1)
 
 
 def test_adding_removing_experts_refreshes_cache(registry):
@@ -208,3 +238,34 @@ def test_registry_rejects_duplicate_and_resolves_paths(tmp_path):
     assert registry.get("b").adapter_path == "org/adapter"
     with pytest.raises(ValueError, match="Duplicate"):
         registry.add(registry.get("a"))
+
+
+def test_registry_filters_by_declared_interface_without_changing_experts(tmp_path):
+    manifest = tmp_path / "experts.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "experts": [
+                    {
+                        "id": "pick",
+                        "simple": "pick things up",
+                        "abstract": "object transport",
+                        "interfaces": ["policy.v1"],
+                    },
+                    {
+                        "id": "predict",
+                        "simple": "predict motion",
+                        "abstract": "future state estimation",
+                        "interfaces": ["world.v1"],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry = ExpertRegistry.from_json(manifest)
+
+    assert registry.for_interface("policy.v1").snapshot() == (registry.get("pick"),)
+    assert len(registry.snapshot()) == 2
+    with pytest.raises(LookupError, match="No experts"):
+        registry.for_interface("missing.v1")

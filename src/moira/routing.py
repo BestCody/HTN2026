@@ -167,6 +167,82 @@ class EmbeddingRouter:
         return RoutingDecision(winner[0], "embedding", scores, margin)
 
 
+class PrototypeEmbeddingRouter:
+    """Frozen cosine router over descriptions plus expert-owned example phrases.
+
+    This keeps the paper's external metadata routing property while allowing a
+    specialist to describe the planner vocabulary it accepts. Adding an expert
+    changes only its metadata; there is no trained routing head or task-to-ID
+    rule. Each expert receives its highest similarity across its prototypes.
+    """
+
+    def __init__(
+        self,
+        registry: ExpertRegistry,
+        encoder: TextEncoder | None = None,
+        *,
+        style: DescriptionStyle = "simple",
+    ) -> None:
+        if not isinstance(registry, ExpertRegistry):
+            raise TypeError("registry must be an ExpertRegistry")
+        if style not in ("simple", "abstract"):
+            raise ValueError(f"Unknown description style: {style}")
+        if encoder is None:
+            from .backends import SentenceTransformerEncoder
+
+            encoder = SentenceTransformerEncoder()
+        if not callable(getattr(encoder, "encode", None)):
+            raise TypeError("encoder must implement encode(texts)")
+        self.registry, self.encoder, self.style = registry, encoder, style
+        self._cache_key: tuple[tuple[str, tuple[str, ...]], ...] = ()
+        self._vectors: tuple[tuple[tuple[float, ...], ...], ...] = ()
+        self._lock = RLock()
+
+    def route(self, instruction: str) -> RoutingDecision:
+        with self._lock:
+            experts = _candidates(self.registry, instruction)
+            key = tuple((expert.id, expert.routing_texts(self.style)) for expert in experts)
+            if key != self._cache_key:
+                counts = tuple(len(texts) for _, texts in key)
+                flat_texts = [text for _, texts in key for text in texts]
+                flat_vectors = _normalize(self.encoder.encode(flat_texts), len(flat_texts))
+                vectors = []
+                start = 0
+                for count in counts:
+                    vectors.append(flat_vectors[start : start + count])
+                    start += count
+                self._vectors = tuple(vectors)
+                self._cache_key = key
+            query = _normalize(self.encoder.encode([instruction]), 1)[0]
+            if len(query) != len(self._vectors[0][0]):
+                raise RoutingError("Task and expert embedding dimensions do not match")
+            scores = tuple(
+                (
+                    expert.id,
+                    max(
+                        max(
+                            -1.0,
+                            min(
+                                1.0,
+                                math.fsum(
+                                    left * right
+                                    for left, right in zip(query, vector, strict=True)
+                                ),
+                            ),
+                        )
+                        for vector in prototype_vectors
+                    ),
+                )
+                for expert, prototype_vectors in zip(experts, self._vectors, strict=True)
+            )
+            winner = max(scores, key=lambda item: item[1])
+            margin = None
+            if len(scores) > 1:
+                runner_up = max(score for expert_id, score in scores if expert_id != winner[0])
+                margin = winner[1] - runner_up
+            return RoutingDecision(winner[0], "prototype_embedding", scores, margin)
+
+
 @dataclass(frozen=True)
 class PromptExample:
     instruction: str

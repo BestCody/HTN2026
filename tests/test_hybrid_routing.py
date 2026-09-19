@@ -157,7 +157,9 @@ def test_unavailable_fallback_does_not_use_ambiguous_embedding_guess(registry):
         router.route("task")
 
 
-def test_cli_defaults_to_hybrid_and_keeps_model_revisions_separate(tmp_path, monkeypatch, capsys):
+def test_cli_hybrid_keeps_revisions_separate_and_defaults_to_prototype(
+    tmp_path, monkeypatch, capsys
+):
     import moira.cli as cli
 
     manifest = tmp_path / "experts.json"
@@ -187,6 +189,8 @@ def test_cli_defaults_to_hybrid_and_keeps_model_revisions_separate(tmp_path, mon
         "route",
         "--experts",
         str(manifest),
+        "--router",
+        "hybrid",
         "--model",
         "embedding-model",
         "--revision",
@@ -227,8 +231,6 @@ def test_cli_defaults_to_hybrid_and_keeps_model_revisions_separate(tmp_path, mon
         "route",
         "--experts",
         str(manifest),
-        "--router",
-        "embedding",
         "--model",
         "embedding-model",
         "--revision",
@@ -238,8 +240,69 @@ def test_cli_defaults_to_hybrid_and_keeps_model_revisions_separate(tmp_path, mon
     ]
     assert main(embedding_arguments) == 0
     output = json.loads(capsys.readouterr().out)
-    assert output["expert_id"] == "a" and output["strategy"] == "embedding"
-    assert len(constructors) == 1  # explicit paper baseline never loads the LM
+    assert output["expert_id"] == "a" and output["strategy"] == "prototype_embedding"
+    assert len(constructors) == 1  # production router never loads the LM
+
+
+def test_cli_interface_limits_only_the_compatible_pool(tmp_path, monkeypatch, capsys):
+    import moira.cli as cli
+
+    manifest = tmp_path / "experts.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "experts": [
+                    {
+                        "id": "policy",
+                        "simple": "make actions",
+                        "abstract": "control",
+                        "interfaces": ["policy.v1"],
+                    },
+                    {
+                        "id": "world",
+                        "simple": "predict motion",
+                        "abstract": "dynamics",
+                        "interfaces": ["world.v1"],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    samples = tmp_path / "samples.jsonl"
+    samples.write_text(
+        '\n'.join(
+            (
+                json.dumps({"instruction": "do it", "expert_id": "policy"}),
+                json.dumps({"instruction": "what happens", "expert_id": "world"}),
+            )
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cli,
+        "SentenceTransformerEncoder",
+        lambda *args, **kwargs: Encoder({"make actions": [1], "do it": [1]}),
+    )
+
+    assert (
+        main(
+            [
+                "evaluate",
+                "--experts",
+                str(manifest),
+                "--interface",
+                "policy.v1",
+                "--samples",
+                str(samples),
+            ]
+        )
+        == 0
+    )
+    output = json.loads(capsys.readouterr().out)
+    assert output["accuracy"] == 1
+    assert output["interface"] == "policy.v1"
+    assert output["count"] == 1 and output["excluded_samples"] == 1
 
 
 @pytest.mark.parametrize(
