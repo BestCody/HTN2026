@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="four-dof-desktop-arm-v1">
+  <!--Kinematic validation only: zero gravity, no actuators, and no invented joint limits or dynamics.-->
+  <compiler angle="radian" meshdir="meshes" autolimits="true" balanceinertia="true" />
+  <option gravity="0 0 0" />
+  <asset>
+    <mesh name="fixed_base" file="fixed_base.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="turntable" file="turntable.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="upper_arm" file="upper_arm.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="forearm" file="forearm.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="gripper_fixed" file="gripper_fixed.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="gripper_mirror" file="gripper_mirror.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="gripper_primary" file="gripper_primary.stl" scale="1 1 1" inertia="convex" />
+  </asset>
+  <worldbody>
+    <body name="fixed_base">
+      <geom name="fixed_base_mesh" type="mesh" mesh="fixed_base" rgba="0.55 0.62 0.72 1" />
+      <body name="turntable" pos="0.00965 0.047349999914 -3.30779244597e-16">
+        <joint name="J1_BASE_YAW" type="hinge" axis="0 1 0" limited="false" />
+        <geom name="turntable_mesh" type="mesh" mesh="turntable" rgba="0.55 0.62 0.72 1" />
+        <body name="upper_arm" pos="-0.00353585011008 0.0266398001168 -0.0054">
+          <joint name="J2_SHOULDER" type="hinge" axis="0 0 1" limited="false" />
+          <geom name="upper_arm_mesh" type="mesh" mesh="upper_arm" rgba="0.55 0.62 0.72 1" />
+          <body name="forearm" pos="0.111466017178 0.106466017178 -0.00535">
+            <joint name="J3_ELBOW" type="hinge" axis="0 0 1" limited="false" />
+            <geom name="forearm_mesh" type="mesh" mesh="forearm" rgba="0.55 0.62 0.72 1" />
+            <geom name="gripper_fixed_mesh" type="mesh" mesh="gripper_fixed" rgba="0.48 0.54 0.64 1" />
+            <body name="gripper_primary" pos="0.0632579918849 -0.0782792371111 -0.02455">
+              <joint name="J4_END_EFFECTOR" type="hinge" axis="0.708318205351 0.70589327803 0" limited="false" />
+              <geom name="gripper_primary_mesh" type="mesh" mesh="gripper_primary" rgba="0.26 0.55 0.82 1" />
+            </body>
+            <body name="gripper_mirror" pos="0.0667289935838 -0.0746789389004 0.005">
+              <joint name="J4_END_EFFECTOR_MIRROR" type="hinge" axis="0.708318205351 0.70589327803 0" limited="false" />
+              <geom name="gripper_mirror_mesh" type="mesh" mesh="gripper_mirror" rgba="0.26 0.55 0.82 1" />
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <equality>
+    <joint name="J4_GEAR_COUPLING" joint1="J4_END_EFFECTOR" joint2="J4_END_EFFECTOR_MIRROR" polycoef="0 -1 0 0 0" />
+  </equality>
+</mujoco>

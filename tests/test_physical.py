@@ -40,6 +40,7 @@ def test_complete_edge_pipeline_uses_both_arms_and_learns_object_mass(tmp_path):
     result = run_edge_demo(tmp_path / "memory.db")
     assert result.selected_plan == "bimanual"
     assert result.executed and result.success
+    assert result.camera_verified
     assert "camera-object-detector" in result.routed_components
     assert "rigid-world" in result.routed_components
     assert "bimanual-world" in result.routed_components
@@ -141,7 +142,7 @@ def test_controller_runs_installed_primary_arm_and_blocks_unavailable_arm():
 
 def test_execution_request_requires_timestamped_measured_robot_state():
     frame = CameraFrame("camera", b"jpeg", time())
-    with pytest.raises(ValueError, match="measured robot_state"):
+    with pytest.raises(ValueError, match="requires a robot_state"):
         TaskRequest("sam", (frame,), instruction="move", execute=True)
     with pytest.raises(ValueError, match="timestamped robot_state"):
         TaskRequest(

@@ -50,8 +50,8 @@ switching, preload rollback, concurrent session leases, real PEFT training and
 reload, local Transformers generation, evaluation metrics, and closed-loop
 pretrained routing with learned adapter actions.
 
-The final physical-audit run completed 144 normal tests, with 13 pretrained E2E
-tests skipped. The opt-in run completed all 157 tests. The E2E cases exercise 48 complete episodes across resident,
+The latest live physical-audit run completed 176 normal tests, with 13 pretrained
+E2E tests skipped. The earlier opt-in run completed all 157 tests. The E2E cases exercise 48 complete episodes across resident,
 disk-swapped, and multi-adapter policy serving; measured details are in
 [E2E results](e2e-results.md).
 
@@ -131,8 +131,8 @@ control and repaired the following faults:
 - the hardware layer creates drivers only for physical arms marked installed,
   converts validated joint/gripper trajectories through per-channel pulse
   calibration, rejects frequency or mapping mismatches, and latches emergency
-  stops until an explicit rearm; the replacement arm has no active channel map
-  until its wiring is confirmed.
+  stops until an explicit rearm; Arm #1 now has a confirmed channel map, while
+  missing pulse endpoints keep physical output disabled.
 
 The arm gate now requires more than a successful Fusion export. Motion readiness
 also requires validated mesh scale, parent-link joint frames, kinematics,
@@ -140,10 +140,11 @@ collision geometry, actuator mapping, payload, and joint velocity limits. STL
 coordinates are explicitly treated as unitless until their bounds are checked.
 
 The remaining physical blockers are real inputs rather than silent software
-defaults: the Fusion export must still be run, payload and elbow deflection must
-be measured, servo pulse endpoints and speeds must be calibrated, collision
-geometry must be validated, and an independent stop path must be physically
-tested. The Baseten identifiers remain deployment placeholders and
+defaults: the Fusion geometry and kinematic MuJoCo hierarchy are now validated,
+while payload and elbow deflection must be measured, servo pulse endpoints and
+speeds must be calibrated, the one `rotateBase` non-meshable body must be
+resolved, collision geometry must be physically validated, and an independent
+stop path must be tested. The Baseten identifiers remain deployment placeholders and
 the offline state-space models remain deterministic integration fixtures.
 
 The complete model and dataset disposition is recorded in the

@@ -19,8 +19,8 @@ This repository implements the routing and serving method and provides a
 specialist-training interface. It does **not** bundle trained robot policies or
 claim to reproduce the paper's benchmark results.
 
-The core package has no third-party dependencies. Pretrained routing and LoRA
-training are optional installations.
+The core package has one small configuration dependency. Camera, hardware,
+pretrained routing, and LoRA training are optional installations.
 
 ## GPU training environment
 
@@ -49,7 +49,7 @@ On 64-bit Raspberry Pi OS with Python 3.10+, run from the repository root:
 
 ```bash
 python3 -m venv .venv
-./.venv/bin/python -m pip install -e ".[hardware]"
+./.venv/bin/python -m pip install -e ".[camera,hardware]"
 ./.venv/bin/moira pi-check --strict
 ./.venv/bin/moira physical-demo
 ```
@@ -64,26 +64,68 @@ without commanding hardware. See the
 [Pi 4B + Baseten architecture](docs/pi4-baseten-architecture.md) for production
 wiring and deployment contracts.
 
+## Live physical workflow
+
+[`config/pi4_runtime.json`](config/pi4_runtime.json) is the configuration map
+for the active robot model, component manifest, persistent personal memory,
+run journal, router, and every independent Baseten specialist. It contains no
+credentials or robot measurements. Endpoint IDs are read from the ignored
+`.env` file, while joint geometry and servo limits come only from the exported
+robot model.
+
+Check the complete path at any time:
+
+```powershell
+.\.venv\Scripts\python.exe -m moira physical-preflight
+```
+
+The report names every missing CAD, calibration, camera, router, and specialist
+input without printing the Baseten API key. After those inputs are ready, run a
+plan-only task from a prerecorded command:
+
+```powershell
+.\.venv\Scripts\python.exe -m moira physical-run `
+  --audio .\command.wav `
+  --camera 0 `
+  --workspace .\workspace.json
+```
+
+On the Raspberry Pi, `--record-seconds 5` records a live ALSA WAV command in
+place of `--audio`. Add `--execute --robot-state robot-state.json` only after
+the exported robot model and PCA9685 calibration pass preflight. Physical
+execution requires a timestamped state observation and a post-action camera
+capture. The program does not initialize I2C for plan-only requests.
+
+Each attempt is appended to `outputs/physical_runs.jsonl`. A successful record
+contains the transcript, recalled personal context, exact routed specialists,
+all candidate plans, parallel 2–3 second predictions, selected plan, control
+telemetry, before/after scene states, verified outcome, per-model prediction
+error, and feedback. Camera and audio payload bytes are excluded from the
+journal; their sizes and capture metadata are retained.
+
 The active SolidWorks arm is tracked in
 [`robot_models/four_dof_desktop_arm/model.json`](robot_models/four_dof_desktop_arm/model.json).
 It uses MG996R servos at the base and shoulder and SG90 servos at the elbow and
 end effector. The assembly, every CAD dependency, and `Robotic+Arm.3mf` are
-hash-pinned. The 3MF contributes millimetre print geometry but contains
-print-plate placement rather than assembled transforms. The configuration is
-the single source for link geometry, coordinate frame, bimanual mounting,
-gripper limits, joint speed, control frequency, clearance, payload, safety
-thresholds, and controller timing. Values from the retired robot were removed;
-unknown values remain `null` and prevent robot-backed components from being
-constructed. Run `moira
+hash-pinned. The Fusion export now supplies the assembled five-link meshes,
+three gripper mechanism groups, Y-up coordinate frame, four analytic actuator
+axes, 154.14 mm upper-arm spacing, and 100.10 mm forearm spacing. MuJoCo 3.13
+compiles the CAD-derived kinematic model with counter-rotating gripper fingers
+and passes all four commanded parent/child motion checks. The configuration remains
+the single source for geometry, bimanual mounting, gripper limits, joint speed,
+control frequency, clearance, payload, safety thresholds, and controller
+timing. Values from the retired robot were removed; unmeasured physical values
+remain `null` and prevent motor control from starting. Run `moira
 robot-model-check robot_models/four_dof_desktop_arm/model.json
---verify-source` to inspect its readiness. Exact Fusion export and calibration
+--verify-source` to inspect its readiness. Export, validation, and calibration
 steps are documented in
 [`robot_models/four_dof_desktop_arm/README.md`](robot_models/four_dof_desktop_arm/README.md).
 The hardware path uses one PCA9685 and the confirmed external 6 V/10 A supply.
-The new arm's installation state, channel map, pulse endpoints, and SG90 voltage
-compatibility are deliberately unconfirmed. These values live in the robot
-configuration rather than driver code. Physical execution and dual-arm startup
-remain blocked until the corresponding installation records are calibrated.
+Arm #1 is installed with base, shoulder, elbow, and gripper on channels 0, 1,
+2, and 3. Pulse endpoints and SG90 voltage compatibility remain unconfirmed.
+These values live in the robot configuration rather than driver code. Physical
+execution remains blocked until Arm #1 is calibrated; dual-arm startup also
+requires the second installation.
 
 The older `demo` routes a toy instruction to a policy and completes a three-step
 line world. Its manually defined encoder is explicitly a plumbing fixture, not

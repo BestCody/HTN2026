@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "robot_model": "../robot_models/four_dof_desktop_arm/model.json",
+  "component_manifest": "../examples/pi4_components.json",
+  "memory_path": "../outputs/personal_memory.db",
+  "journal_path": "../outputs/physical_runs.jsonl",
+  "router": {
+    "id_env": "BASETEN_ROUTER_CHAIN_ID",
+    "environment_env": "BASETEN_ROUTER_ENVIRONMENT",
+    "default_environment": "development"
+  },
+  "remote_components": {
+    "baseten-vision-scene": {"id_env": "BASETEN_VISION_MODEL_ID", "entity": "model"},
+    "baseten-grasp-pose": {"id_env": "BASETEN_GRASP_MODEL_ID", "entity": "model"},
+    "baseten-stt": {"id_env": "BASETEN_STT_MODEL_ID", "entity": "model", "environment_env": "BASETEN_STT_ENVIRONMENT"},
+    "baseten-voice-nlp": {"id_env": "BASETEN_VOICE_NLP_MODEL_ID", "entity": "model"},
+    "baseten-tts": {"id_env": "BASETEN_TTS_MODEL_ID", "entity": "model"},
+    "baseten-task-planner": {"id_env": "BASETEN_PLANNER_CHAIN_ID", "entity": "chain"},
+    "baseten-waypoint-policy": {"id_env": "BASETEN_WAYPOINT_POLICY_MODEL_ID", "entity": "model"},
+    "baseten-bimanual-act": {"id_env": "BASETEN_BIMANUAL_POLICY_MODEL_ID", "entity": "model"},
+    "baseten-pour-policy": {"id_env": "BASETEN_POUR_POLICY_MODEL_ID", "entity": "model"},
+    "baseten-insert-policy": {"id_env": "BASETEN_INSERT_POLICY_MODEL_ID", "entity": "model"},
+    "baseten-open-lid-policy": {"id_env": "BASETEN_OPEN_LID_POLICY_MODEL_ID", "entity": "model"},
+    "baseten-handover-policy": {"id_env": "BASETEN_HANDOVER_POLICY_MODEL_ID", "entity": "model"},
+    "baseten-forward-dynamics": {"id_env": "BASETEN_DYNAMICS_MODEL_ID", "entity": "model"},
+    "baseten-rigid-world": {"id_env": "BASETEN_RIGID_WORLD_MODEL_ID", "entity": "model"},
+    "baseten-grasp-contact-world": {"id_env": "BASETEN_CONTACT_WORLD_MODEL_ID", "entity": "model"},
+    "baseten-bimanual-world": {"id_env": "BASETEN_BIMANUAL_WORLD_MODEL_ID", "entity": "model"},
+    "baseten-deformable-world": {"id_env": "BASETEN_DEFORMABLE_WORLD_MODEL_ID", "entity": "model"},
+    "baseten-human-motion-world": {"id_env": "BASETEN_HUMAN_WORLD_MODEL_ID", "entity": "model"},
+    "baseten-task-reward": {"id_env": "BASETEN_REWARD_MODEL_ID", "entity": "model"},
+    "baseten-outcome-verifier": {"id_env": "BASETEN_OUTCOME_MODEL_ID", "entity": "model"}
+  }
+}

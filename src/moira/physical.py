@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from threading import Lock
@@ -1061,12 +1061,17 @@ class OutcomeInput:
     plan: FinalPlan
     control: ControlReport
     world_before: WorldState
+    world_after: WorldState | None = None
 
     def __post_init__(self) -> None:
         if self.plan.candidate.id != self.control.plan_id:
             raise ValueError("Outcome plan and control IDs must match")
         if not isinstance(self.world_before, WorldState):
             raise TypeError("Outcome verification needs a typed world state")
+        if self.world_after is not None and not isinstance(self.world_after, WorldState):
+            raise TypeError("Outcome verification after-state must be a typed world state or null")
+        if not self.control.executed and self.world_after is not None:
+            raise ValueError("An unexecuted plan cannot have a post-action world state")
 
 
 @dataclass(frozen=True)
@@ -1181,6 +1186,7 @@ class RobotState:
     joint_positions: Mapping[str, tuple[float, ...]]
     gripper_widths_m: Mapping[str, float] = field(default_factory=dict)
     observed_at: float = 0.0
+    source: str = "observed"
 
     def __post_init__(self) -> None:
         if any(arm not in ("left", "right") for arm in self.joint_positions):
@@ -1205,6 +1211,8 @@ class RobotState:
             raise ValueError("Robot gripper widths must be in [0, 0.5] metres")
         if not isinstance(self.observed_at, (int, float)) or not math.isfinite(self.observed_at):
             raise ValueError("Robot-state timestamp must be finite")
+        if self.source not in ("observed", "camera_estimate", "commanded_home", "commanded"):
+            raise ValueError("Robot-state source is unsupported")
 
 
 @dataclass(frozen=True)
@@ -1255,7 +1263,7 @@ class TaskRequest:
         if not isinstance(self.execute, bool) or not isinstance(self.speak, bool):
             raise TypeError("execute and speak must be boolean")
         if self.execute and self.robot_state is None:
-            raise ValueError("Physical execution requires a measured robot_state")
+            raise ValueError("Physical execution requires a robot_state")
         if self.execute and self.robot_state is not None and self.robot_state.observed_at <= 0:
             raise ValueError("Physical execution requires a timestamped robot_state")
 
@@ -1452,6 +1460,7 @@ class PhysicalAIResult:
     failure: FailureReport | None = None
     load: LoadEstimate | None = None
     prediction_error: PredictionErrorReport | None = None
+    world_after: WorldState | None = None
 
 
 @dataclass(frozen=True)
@@ -1476,6 +1485,7 @@ class PhysicalAI:
         robot_model_id: str,
         gripper_geometry: Mapping[str, Any],
         available_arms: tuple[str, ...] = ("left", "right"),
+        require_camera_verification: bool = False,
     ) -> None:
         if not isinstance(registry, ComponentRegistry):
             raise TypeError("registry must be a ComponentRegistry")
@@ -1502,6 +1512,9 @@ class PhysicalAI:
         ):
             raise ValueError("available_arms must contain unique left/right control slots")
         self.available_arms = available_arms
+        if not isinstance(require_camera_verification, bool):
+            raise TypeError("require_camera_verification must be boolean")
+        self.require_camera_verification = require_camera_verification
 
     @classmethod
     def from_robot_model(
@@ -1511,6 +1524,7 @@ class PhysicalAI:
         *,
         router: ComponentRouter | None = None,
         profile: PiRuntimeProfile | None = None,
+        require_camera_verification: bool = False,
     ) -> PhysicalAI:
         robot_model.require_motion_ready()
         return cls(
@@ -1523,11 +1537,21 @@ class PhysicalAI:
                 "max_width_m": robot_model.max_gripper_width_m,
             },
             available_arms=robot_model.servo_controller.installed_arms,
+            require_camera_verification=require_camera_verification,
         )
 
-    def run(self, request: TaskRequest) -> PhysicalAIResult | ClarificationResult:
+    def run(
+        self,
+        request: TaskRequest,
+        *,
+        post_action_capture: Callable[[], tuple[CameraFrame, ...]] | None = None,
+    ) -> PhysicalAIResult | ClarificationResult:
         if not isinstance(request, TaskRequest):
             raise TypeError("request must be a TaskRequest")
+        if request.execute and self.require_camera_verification and post_action_capture is None:
+            raise RuntimeError(
+                "Physical execution requires a post-action camera capture for verification"
+            )
         decisions: list[ComponentDecision] = []
         decisions_lock = Lock()
         route_context = {
@@ -2032,10 +2056,28 @@ class PhysicalAI:
             raise TypeError("Bimanual controller returned an invalid report")
         if not request.execute and control.executed:
             raise RuntimeError("Controller executed motion during a plan-only request")
+        world_after = None
+        if control.executed and post_action_capture is not None:
+            verification_frames = post_action_capture()
+            if (
+                not isinstance(verification_frames, tuple)
+                or not verification_frames
+                or any(not isinstance(frame, CameraFrame) for frame in verification_frames)
+            ):
+                raise TypeError(
+                    "post_action_capture must return a non-empty tuple of CameraFrame objects"
+                )
+            world_after = invoke(
+                Layer.PERCEPTION,
+                "perception.scene",
+                PerceptionInput(verification_frames, workspace),
+                WorldState,
+                context={"observation_phase": "after_execution"},
+            )
         outcome = invoke(
             Layer.OUTCOME,
             "outcome.verify",
-            OutcomeInput(plan, control, world),
+            OutcomeInput(plan, control, world, world_after),
             OutcomeReport,
         )
         if outcome.plan_id != plan.candidate.id:
@@ -2135,6 +2177,7 @@ class PhysicalAI:
             failure=failure,
             load=load,
             prediction_error=prediction_error,
+            world_after=world_after,
         )
 
 

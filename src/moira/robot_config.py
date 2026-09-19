@@ -371,7 +371,6 @@ class RobotModel:
             and self.upper_arm_m is not None
             and self.forearm_m is not None
             and self.shoulder_height_m is not None
-            and self.shoulder_offset_m is not None
             and self.trajectory_frequency_hz is not None
             and self.required_clearance_m is not None
             and self.max_gripper_width_m is not None
@@ -403,7 +402,11 @@ class RobotModel:
 
     @property
     def bimanual_motion_ready(self) -> bool:
-        return self.motion_ready and self.servo_controller.bimanual_ready
+        return (
+            self.motion_ready
+            and self.servo_controller.bimanual_ready
+            and self.shoulder_offset_m is not None
+        )
 
     def require_bimanual_motion_ready(self) -> None:
         self.require_motion_ready()
@@ -415,11 +418,14 @@ class RobotModel:
 
     @property
     def bimanual_readiness_issues(self) -> tuple[str, ...]:
-        return tuple(
+        missing = [
             f"{installation.physical_id} is not marked installed"
             for installation in self.servo_controller.arm_installations.values()
             if not installation.installed
-        )
+        ]
+        if self.shoulder_offset_m is None:
+            missing.append("bimanual shoulder offset")
+        return tuple(missing)
 
     @property
     def readiness_issues(self) -> tuple[str, ...]:
@@ -446,7 +452,6 @@ class RobotModel:
             ("upper-arm length", self.upper_arm_m),
             ("forearm length", self.forearm_m),
             ("shoulder height", self.shoulder_height_m),
-            ("bimanual shoulder offset", self.shoulder_offset_m),
             ("trajectory control frequency", self.trajectory_frequency_hz),
             ("required collision clearance", self.required_clearance_m),
             ("calibrated maximum gripper width", self.max_gripper_width_m),

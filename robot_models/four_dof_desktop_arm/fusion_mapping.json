@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "document_name": "Sharma_Ishaan_robotAssem",
+  "coordinate_frame": {
+    "ground_plane": "XZ",
+    "up_axis": "Y"
+  },
+  "links": {
+    "fixed_base": [
+      "Sharma_Ishaan_base1:1",
+      "Sharma_Ishaan_base2:1",
+      "servoMotorMG996R:1",
+      "Sharma_Ishaan_BallBearing_2:1",
+      "Sharma_Ishaan_BallBearing_2:2",
+      "Sharma_Ishaan_BallBearing_2:3",
+      "Sharma_Ishaan_BallBearing_2:4",
+      "Sharma_Ishaan_BallBearing_2:5",
+      "Sharma_Ishaan_BallBearing_2:6",
+      "Sharma_Ishaan_BallBearing_2:7",
+      "Sharma_Ishaan_BallBearing_2:8",
+      "Sharma_Ishaan_BallBearing_2:9",
+      "Sharma_Ishaan_BallBearing_2:10",
+      "Sharma_Ishaan_BallBearing_2:11",
+      "Sharma_Ishaan_BallBearing_2:12",
+      "Sharma_Ishaan_BallBearing_2:13",
+      "Sharma_Ishaan_BallBearing_2:14",
+      "Sharma_Ishaan_BallBearing_2:15",
+      "Sharma_Ishaan_BallBearing_2:16",
+      "Sharma_Ishaan_BallBearing_2:17",
+      "Sharma_Ishaan_BallBearing_2:18",
+      "Sharma_Ishaan_BallBearing_2:19",
+      "Sharma_Ishaan_BallBearing_2:20"
+    ],
+    "turntable": [
+      "Sharma_Ishaan_rotateBase:1",
+      "servoMotorMG996R:2"
+    ],
+    "upper_arm": [
+      "sharma_ishaan_Link1:1",
+      "SG90 - Micro Servo 9g - Tower Pro:1"
+    ],
+    "forearm": [
+      "second arm:1",
+      "SG90 - Micro Servo 9g - Tower Pro.1:2"
+    ],
+    "end_effector": [
+      "Gear Ring:1",
+      "gripper:1",
+      "gripper:2",
+      "horn:1",
+      "lever:1",
+      "lever:2",
+      "ServoGear:1",
+      "ServoGear:2"
+    ]
+  },
+  "joint_chain": {
+    "turntable": "J1_BASE_YAW",
+    "upper_arm": "J2_SHOULDER",
+    "forearm": "J3_ELBOW",
+    "end_effector": "J4_END_EFFECTOR"
+  },
+  "joint_axes": {
+    "J1_BASE_YAW": {
+      "parent_link": "fixed_base",
+      "child_link": "turntable",
+      "source_occurrence": "Sharma_Ishaan_rotateBase:1",
+      "feature_selector": "largest_cylindrical_radius"
+    },
+    "J2_SHOULDER": {
+      "parent_link": "turntable",
+      "child_link": "upper_arm",
+      "source_occurrence": "servoMotorMG996R:2",
+      "feature_selector": "largest_cylindrical_radius"
+    },
+    "J3_ELBOW": {
+      "parent_link": "upper_arm",
+      "child_link": "forearm",
+      "source_occurrence": "SG90 - Micro Servo 9g - Tower Pro:1+SG90 - Micro Servo 9g - Tower Pro.1:1",
+      "feature_selector": "largest_cylindrical_radius"
+    },
+    "J4_END_EFFECTOR": {
+      "parent_link": "forearm",
+      "child_link": "end_effector",
+      "source_occurrence": "SG90 - Micro Servo 9g - Tower Pro.1:2",
+      "feature_selector": "largest_cylindrical_radius"
+    }
+  },
+  "gripper_mechanism": {
+    "primary_joint": "J4_END_EFFECTOR",
+    "mirror_joint": "J4_END_EFFECTOR_MIRROR",
+    "gear_ratio": -1.0,
+    "mirror_axis_source": {
+      "source_occurrence": "Gear Ring:1",
+      "feature_selector": "largest_cylindrical_radius"
+    },
+    "fixed_occurrences": [
+      "Gear Ring:1"
+    ],
+    "primary_occurrences": [
+      "ServoGear:2",
+      "gripper:2",
+      "horn:1",
+      "lever:1"
+    ],
+    "mirror_occurrences": [
+      "ServoGear:1",
+      "gripper:1",
+      "lever:2"
+    ]
+  }
+}

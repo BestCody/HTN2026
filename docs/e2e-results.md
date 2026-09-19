@@ -96,6 +96,39 @@ flow, and `robot-model-check --verify-source` validated all 18 CAD/3MF source
 artifacts while correctly reporting the new physical profile as not
 motion-ready.
 
+## Live workflow regression
+
+On 2026-09-19, the live-session pass completed with 176 passed and 13 optional
+pretrained E2E cases skipped in 11.97 seconds. Ruff passed across `src`,
+`tests`, `tools`, and `deploy`; a wheel built successfully. The offline physical
+E2E now performs a second perception pass after execution and reports
+`camera_verified: true`. The production preflight correctly reports the active
+robot as awaiting CAD/calibration and separates the missing endpoints required
+for the single-arm pick/place demo from optional bimanual and task-specific
+specialists. The connected CO6 USB camera was opened through the production
+OpenCV source and returned a valid 43,488-byte JPEG from device index 0.
+
+## CAD and MuJoCo regression
+
+On 2026-09-19, the Fusion exporter captured 38 occurrences, 76 per-body mesh
+references, analytic cylindrical faces, transforms, physical properties, and
+metric bounds. Named CAD feature selectors recovered four revolute axes without
+manual Fusion joints. The merged model contains five canonical link-local STL
+meshes and three gripper mechanism meshes, with 36 of 37 occurrence bounds
+matching within 0.1 mm at a validated Fusion STL scale of 0.001 m.
+`Sharma_Ishaan_rotateBase:1` remains recorded as a bounds outlier because Fusion
+did not write one non-meshable body.
+
+MuJoCo 3.13 compiled the kinematic validation model as seven bodies, seven
+meshes, five hinge coordinates, and one gear equality. The equality makes the
+two gripper groups counter-rotate from one commanded J4 degree of freedom. All
+four hierarchy checks kept the upstream body fixed while changing the intended
+downstream pose. A zero-gravity 100-step run remained finite, and the home plus
+per-joint renders were visually reviewed. The full local suite completed with
+181 passed and 13 optional pretrained E2E cases skipped in 8.50 seconds; Ruff
+passed. A separate opt-in run completed all 13 pretrained routing E2E cases in
+116.35 seconds.
+
 ## Additional checks
 
 Both real models ran through `python -m moira evaluate` on the four illustrative

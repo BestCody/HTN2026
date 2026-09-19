@@ -9,6 +9,7 @@ import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from threading import RLock
 from time import time
 from typing import TYPE_CHECKING, Any
 
@@ -473,6 +474,173 @@ class RpicamStillSource:
         if not result.stdout:
             raise RuntimeError("Camera capture returned an empty image")
         return CameraFrame(self.camera_id, result.stdout, time())
+
+
+class OpenCVCameraSource:
+    """Capture bounded JPEG frames from a USB/UVC webcam such as the CO6 camera."""
+
+    def __init__(
+        self,
+        source: int | str = 0,
+        *,
+        camera_id: str = "usb0",
+        width: int = 640,
+        height: int = 480,
+        warmup_frames: int = 3,
+        jpeg_quality: int = 85,
+    ) -> None:
+        if not isinstance(source, (int, str)) or isinstance(source, bool):
+            raise TypeError("Camera source must be a device index or path")
+        if isinstance(source, int) and source < 0:
+            raise ValueError("Camera device index must be nonnegative")
+        if isinstance(source, str) and not source.strip():
+            raise ValueError("Camera device path must be non-empty")
+        if not isinstance(camera_id, str) or not camera_id.strip():
+            raise ValueError("camera_id must be a non-empty string")
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 1
+            for value in (width, height)
+        ):
+            raise ValueError("Camera width and height must be positive integers")
+        if (
+            not isinstance(warmup_frames, int)
+            or isinstance(warmup_frames, bool)
+            or warmup_frames < 0
+        ):
+            raise ValueError("warmup_frames must be a nonnegative integer")
+        if (
+            not isinstance(jpeg_quality, int)
+            or isinstance(jpeg_quality, bool)
+            or not 1 <= jpeg_quality <= 100
+        ):
+            raise ValueError("jpeg_quality must be an integer in [1, 100]")
+        self.source = source
+        self.camera_id = camera_id
+        self.width = width
+        self.height = height
+        self.warmup_frames = warmup_frames
+        self.jpeg_quality = jpeg_quality
+        self._capture: Any | None = None
+        self._lock = RLock()
+
+    def _open(self, cv2: Any) -> Any:
+        if self._capture is not None and self._capture.isOpened():
+            return self._capture
+        capture = cv2.VideoCapture(self.source)
+        if not capture.isOpened():
+            capture.release()
+            raise RuntimeError(f"Cannot open USB camera source: {self.source}")
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        self._capture = capture
+        return capture
+
+    def capture(self) -> CameraFrame:
+        try:
+            import cv2
+        except ImportError as exc:
+            raise RuntimeError(
+                "Install USB camera support with 'pip install .[camera]'"
+            ) from exc
+        with self._lock:
+            capture = self._open(cv2)
+            image = None
+            for _ in range(self.warmup_frames + 1):
+                ok, image = capture.read()
+                if not ok or image is None:
+                    self.close()
+                    raise RuntimeError(f"USB camera {self.source} did not return a frame")
+            ok, encoded = cv2.imencode(
+                ".jpg",
+                image,
+                [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality],
+            )
+            if not ok or encoded is None:
+                raise RuntimeError("OpenCV could not encode the camera frame as JPEG")
+            return CameraFrame(self.camera_id, encoded.tobytes(), time())
+
+    def close(self) -> None:
+        with self._lock:
+            if self._capture is not None:
+                self._capture.release()
+                self._capture = None
+
+
+class AlsaCommandRecorder:
+    """Record a fixed-duration WAV command from an ALSA microphone on Raspberry Pi."""
+
+    def __init__(
+        self,
+        *,
+        device: str | None = None,
+        sample_rate_hz: int = 16_000,
+        channels: int = 1,
+        timeout_margin_seconds: float = 2.0,
+    ) -> None:
+        if device is not None and (not isinstance(device, str) or not device.strip()):
+            raise ValueError("ALSA device must be a non-empty string or null")
+        if (
+            not isinstance(sample_rate_hz, int)
+            or isinstance(sample_rate_hz, bool)
+            or not 8_000 <= sample_rate_hz <= 48_000
+        ):
+            raise ValueError("Audio sample rate must be an integer in [8000, 48000]")
+        if channels not in (1, 2):
+            raise ValueError("Audio channels must be 1 or 2")
+        if (
+            not isinstance(timeout_margin_seconds, (int, float))
+            or isinstance(timeout_margin_seconds, bool)
+            or not math.isfinite(timeout_margin_seconds)
+            or timeout_margin_seconds <= 0
+        ):
+            raise ValueError("Audio timeout margin must be finite and positive")
+        self.device = device
+        self.sample_rate_hz = sample_rate_hz
+        self.channels = channels
+        self.timeout_margin_seconds = float(timeout_margin_seconds)
+
+    def record(self, duration_seconds: int) -> bytes:
+        if (
+            not isinstance(duration_seconds, int)
+            or isinstance(duration_seconds, bool)
+            or not 1 <= duration_seconds <= 30
+        ):
+            raise ValueError("Command recording duration must be an integer in [1, 30]")
+        command = ["arecord", "--quiet"]
+        if self.device is not None:
+            command.extend(("--device", self.device))
+        command.extend(
+            (
+                "--duration",
+                str(duration_seconds),
+                "--format",
+                "S16_LE",
+                "--rate",
+                str(self.sample_rate_hz),
+                "--channels",
+                str(self.channels),
+                "--file-type",
+                "wav",
+                "-",
+            )
+        )
+        try:
+            result = subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                timeout=duration_seconds + self.timeout_margin_seconds,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("arecord is not installed on this Raspberry Pi") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Microphone recording exceeded its time limit") from exc
+        except subprocess.CalledProcessError as exc:
+            detail = exc.stderr.decode(errors="replace")[-1000:]
+            raise RuntimeError(f"Microphone recording failed: {detail}") from exc
+        if len(result.stdout) <= 44:
+            raise RuntimeError("Microphone recording returned an empty WAV file")
+        return result.stdout
 
 
 class SimulatedArmDriver:

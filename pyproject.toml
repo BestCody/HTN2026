@@ -15,6 +15,7 @@ embeddings = ["sentence-transformers>=3.4,<6"]
 prompt = ["transformers>=4.56,<6", "torch>=2.6,<3"]
 adapters = ["peft>=0.15,<1", "torch>=2.6,<3"]
 hardware = ["Adafruit-Blinka>=9,<10", "adafruit-circuitpython-pca9685>=3.4.22,<4"]
+camera = ["opencv-python-headless>=4.10,<5"]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 
 [project.scripts]

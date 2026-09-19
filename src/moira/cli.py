@@ -15,10 +15,17 @@ from .backends import (
     TransformersGenerator,
 )
 from .demo import run_demo
+from .edge_components import AlsaCommandRecorder, OpenCVCameraSource
 from .edge_demo import run_edge_demo
 from .evaluation import evaluate_routing, load_samples
 from .experts import ExpertRegistry
+from .physical import ClarificationResult, RobotState
 from .pi import PiRuntimeProfile, inspect_host
+from .production import (
+    build_physical_session,
+    inspect_physical_runtime,
+    load_physical_runtime_config,
+)
 from .robot_config import load_robot_model
 from .robot_sources import inspect_3mf
 from .routing import (
@@ -81,6 +88,33 @@ def _router(args, registry):
     )
 
 
+def _json_mapping(path: Path, name: str) -> dict:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise TypeError(f"{name} must contain a JSON object")
+    return value
+
+
+def _robot_state(path: Path | None) -> RobotState | None:
+    if path is None:
+        return None
+    value = _json_mapping(path, "robot state")
+    joints = value.get("joint_positions")
+    widths = value.get("gripper_widths_m", {})
+    if not isinstance(joints, dict) or not isinstance(widths, dict):
+        raise TypeError("robot state requires joint_positions and gripper_widths_m objects")
+    return RobotState(
+        {str(arm): tuple(positions) for arm, positions in joints.items()},
+        {str(arm): width for arm, width in widths.items()},
+        value.get("observed_at", 0.0),
+        value.get("source", "observed"),
+    )
+
+
+def _camera_device(value: str) -> int | str:
+    return int(value) if value.isdecimal() else value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="MoIRA modular robot policy routing")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -99,6 +133,36 @@ def main(argv: list[str] | None = None) -> int:
     robot_check.add_argument("model", type=Path)
     robot_check.add_argument("--verify-source", action="store_true")
     robot_check.add_argument("--require-motion-ready", action="store_true")
+    physical_preflight = commands.add_parser(
+        "physical-preflight",
+        help="Check CAD, calibration, camera dependency, and Baseten endpoint readiness",
+    )
+    physical_preflight.add_argument(
+        "--config", type=Path, default=Path("config/pi4_runtime.json")
+    )
+    physical_run = commands.add_parser(
+        "physical-run",
+        help="Run the live camera, specialist routing, prediction, control, and feedback path",
+    )
+    physical_run.add_argument(
+        "--config", type=Path, default=Path("config/pi4_runtime.json")
+    )
+    input_group = physical_run.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("--instruction")
+    input_group.add_argument("--audio", type=Path)
+    input_group.add_argument(
+        "--record-seconds",
+        type=int,
+        help="Record a spoken WAV command from the Pi ALSA microphone",
+    )
+    physical_run.add_argument("--user-id", default="demo-user")
+    physical_run.add_argument("--camera", default="0", help="USB camera index or device path")
+    physical_run.add_argument("--camera-id", default="co6-usb")
+    physical_run.add_argument("--audio-device", help="Optional ALSA capture device name")
+    physical_run.add_argument("--workspace", type=Path, help="JSON workspace context")
+    physical_run.add_argument("--robot-state", type=Path, help="Measured robot-state JSON")
+    physical_run.add_argument("--execute", action="store_true")
+    physical_run.add_argument("--speak", action="store_true")
     for command in ("route", "evaluate"):
         sub = commands.add_parser(command)
         sub.add_argument("--experts", required=True, type=Path, help="Expert JSON manifest")
@@ -139,7 +203,14 @@ def main(argv: list[str] | None = None) -> int:
         else:
             sub.add_argument("--samples", required=True, type=Path)
     args = parser.parse_args(argv)
-    if args.command not in ("demo", "physical-demo", "pi-check", "robot-model-check"):
+    if args.command not in (
+        "demo",
+        "physical-demo",
+        "pi-check",
+        "robot-model-check",
+        "physical-preflight",
+        "physical-run",
+    ):
         if args.router != "hybrid" and (args.fallback_model or args.fallback_revision):
             parser.error("--fallback-model and --fallback-revision require --router hybrid")
         if args.router != "hybrid" and args.min_margin is not None:
@@ -207,6 +278,65 @@ def main(argv: list[str] | None = None) -> int:
                 "readiness_issues": model.readiness_issues,
                 "bimanual_readiness_issues": model.bimanual_readiness_issues,
             }
+        elif args.command == "physical-preflight":
+            output = inspect_physical_runtime(load_physical_runtime_config(args.config))
+        elif args.command == "physical-run":
+            config = load_physical_runtime_config(args.config)
+            workspace = (
+                _json_mapping(args.workspace, "workspace") if args.workspace is not None else {}
+            )
+            state = _robot_state(args.robot_state)
+            if args.execute and state is None:
+                parser.error("--execute requires --robot-state with a timestamped observation")
+            audio = None
+            if args.audio is not None:
+                audio_path = args.audio.resolve()
+                if not audio_path.is_file():
+                    raise FileNotFoundError(f"Audio file does not exist: {audio_path}")
+                audio = audio_path.read_bytes()
+            elif args.record_seconds is not None:
+                audio = AlsaCommandRecorder(device=args.audio_device).record(
+                    args.record_seconds
+                )
+            camera = OpenCVCameraSource(
+                _camera_device(args.camera),
+                camera_id=args.camera_id,
+            )
+            with build_physical_session(config, (camera,)) as session:
+                result = session.run(
+                    user_id=args.user_id,
+                    instruction=args.instruction,
+                    audio=audio,
+                    workspace=workspace,
+                    robot_state=state,
+                    execute=args.execute,
+                    speak=args.speak,
+                )
+            if isinstance(result, ClarificationResult):
+                output = {
+                    "status": "clarification",
+                    "transcript": result.transcript,
+                    "question": result.question,
+                    "routed_components": [item.component_id for item in result.routing],
+                    "journal": str(config.journal_path),
+                }
+            else:
+                output = {
+                    "status": result.outcome.status if result.outcome else "unknown",
+                    "transcript": result.intent.transcript,
+                    "candidates": [item.id for item in result.candidates],
+                    "simulations": [asdict(item) for item in result.simulations],
+                    "selected_plan": result.plan.candidate.id,
+                    "routed_components": [item.component_id for item in result.routing],
+                    "executed": result.control.executed,
+                    "camera_verified": result.world_after is not None,
+                    "outcome": asdict(result.outcome) if result.outcome else None,
+                    "prediction_error": (
+                        asdict(result.prediction_error) if result.prediction_error else None
+                    ),
+                    "response": result.response_text,
+                    "journal": str(config.journal_path),
+                }
         else:
             registry = ExpertRegistry.from_json(args.experts)
             if args.interface:

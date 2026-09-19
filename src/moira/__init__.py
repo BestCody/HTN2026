@@ -2,6 +2,7 @@
 
 from .cloud import BasetenComponent, BasetenEndpoint, RemoteComponentRouter
 from .components import ComponentDecision, ComponentRegistry, ComponentSpec, Layer
+from .edge_components import AlsaCommandRecorder, OpenCVCameraSource
 from .experts import Expert, ExpertRegistry
 from .pca9685 import (
     AdafruitPCA9685Device,
@@ -73,10 +74,12 @@ from .routing import (
 )
 from .runtime import MoIRA
 from .serving import AdapterServer, InMemoryServer
+from .session import JsonlRunJournal, PhysicalSession
 
 __all__ = [
     "AdapterServer",
     "ActionChunk",
+    "AlsaCommandRecorder",
     "ArmDriver",
     "ArmInstallation",
     "BasetenComponent",
@@ -106,6 +109,7 @@ __all__ = [
     "HybridRouter",
     "InMemoryServer",
     "MoIRA",
+    "OpenCVCameraSource",
     "Layer",
     "LoadEstimate",
     "MotionTrajectory",
@@ -115,6 +119,7 @@ __all__ = [
     "PCA9685PulseDevice",
     "PhysicalAI",
     "PhysicalAIResult",
+    "PhysicalSession",
     "PiRuntimeProfile",
     "PlanStep",
     "PolicyPlan",
@@ -140,6 +145,7 @@ __all__ = [
     "WorldState",
     "WorldModelPrediction",
     "capture_frames",
+    "JsonlRunJournal",
     "inspect_host",
     "inspect_3mf",
     "load_bundled_robot_model",

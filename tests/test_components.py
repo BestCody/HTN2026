@@ -287,7 +287,7 @@ def test_pi_manifest_is_complete_and_profile_is_bounded():
             "tactile.grasp_stability",
         )
     }
-    assert tactile_ids == {"local-tactile-sparsh"}
+    assert tactile_ids == {"local-tactile-signal"}
     one_gb = PiRuntimeProfile.for_pi4(1024)
     assert one_gb.component_ram_budget_mb == 358
     assert one_gb.simulation_workers == 2

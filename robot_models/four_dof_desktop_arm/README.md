@@ -23,8 +23,9 @@ on this build before execution.
 
 The profile is intentionally motion-disabled. Values inherited from the
 retired arm were removed, including its joint limits, 25 g payload rating,
-Y-up frame, channel assignment, and installed-arm state. The new configuration
-will not command a servo until its geometry, joint limits, PCA9685 mapping,
+Y-up frame, channel assignment, and installed-arm state. Arm #1 has since been
+confirmed installed with base, shoulder, elbow, and gripper on PCA9685 channels
+0, 1, 2, and 3. The configuration will not command a servo until joint limits,
 pulse endpoints, speed limits, power compatibility, payload, collision model,
 and stop path have been validated.
 
@@ -49,20 +50,31 @@ Inspect both the CAD manifest and 3MF report with:
    `Sharma_Ishaan_robotAssem.SLDASM`, then import/open the assembly in Fusion.
 2. Confirm that the imported assembly is assembled rather than laid out for
    printing.
-3. Create or rename the five top-level moving link components to
-   `fixed_base`, `turntable`, `upper_arm`, `forearm`, and `end_effector`.
-4. Create revolute joints named `J1_BASE_YAW`, `J2_SHOULDER`, `J3_ELBOW`, and
-   `J4_END_EFFECTOR`. Set measured limits and a safe rest position for each.
-5. In **Utilities → Scripts and Add-Ins**, add the entire
+3. Keep the imported component names and hierarchy unchanged. The checked
+   `fusion_mapping.json` groups 37 non-duplicate occurrences into `fixed_base`,
+   `turntable`, `upper_arm`, `forearm`, and `end_effector`; the nested SG90
+   duplicate is deliberately excluded.
+4. In **Utilities -> Scripts and Add-Ins**, add the entire
    `tools/FusionExportRobot` directory and run `FusionExportRobot`.
 
-The exporter writes every occurrence mesh and all available transforms,
-bounds, mass properties, parameters, and joints. It marks the export complete
-only when all five canonical links and four named joints are present. This
-prevents a convenient but incorrect mapping from silently becoming the robot
-model.
+The exporter writes occurrence and per-body meshes plus transforms, bounds,
+mass properties, parameters, and analytic cylindrical faces. The joint fitter
+uses named CAD features from `fusion_mapping.json` to recover the four revolute
+axes without manual component renaming, grounding, or Fusion joint creation.
+It rejects missing or ambiguous features rather than substituting coordinates.
 
-Merge a complete export with:
+Fit the joint frames with:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\fit_fusion_joint_axes.py `
+  .\four_dof_desktop_arm_export\fusion_robot_export.json `
+  .\robot_models\four_dof_desktop_arm\fusion_mapping.json
+```
+
+The merge validates Fusion's unitless STL coordinates against metric occurrence
+bounds, transforms every mapped part into its link frame, and combines the
+parts into five canonical link meshes. It also divides the end effector into
+fixed, primary-finger, and mirror-finger meshes using named CAD occurrences:
 
 ```powershell
 .\.venv\Scripts\python.exe .\tools\merge_fusion_robot_export.py `
@@ -71,19 +83,40 @@ Merge a complete export with:
   .\robot_models\four_dof_desktop_arm\model.json
 ```
 
-The merge fills link dimensions, joint origins, axes, and enabled Fusion joint
-limits, then copies collision meshes. It leaves explicit scale and parent-frame
-validation blockers. Do not clear those blockers until the exported bounds
-match physical measurements.
+The merge fills link dimensions, joint origins, and axes. Joint limits remain
+empty until measured on the physical build.
+
+Generate and validate the CAD-derived MuJoCo hierarchy with:
+
+```powershell
+.\.venv\Scripts\python.exe .\tools\generate_mujoco_model.py `
+  .\robot_models\four_dof_desktop_arm\model.json `
+  .\robot_models\four_dof_desktop_arm\kinematic_validation.xml
+
+.\.venv-training\Scripts\python.exe .\tools\validate_mujoco_model.py `
+  .\robot_models\four_dof_desktop_arm\kinematic_validation.xml `
+  --output .\robot_models\four_dof_desktop_arm\mujoco_validation.json `
+  --robot-model .\robot_models\four_dof_desktop_arm\model.json
+
+.\.venv-training\Scripts\python.exe .\tools\render_mujoco_validation.py `
+  .\robot_models\four_dof_desktop_arm\kinematic_validation.xml `
+  .\robot_models\four_dof_desktop_arm\kinematic_validation.png `
+  .\robot_models\four_dof_desktop_arm\joint_motion_validation.png
+```
+
+This MJCF is intentionally limited to kinematic validation. It uses zero
+gravity and has no actuators or invented limits. The two CAD-derived gripper
+hinges are linked by a -1:1 gear equality, so they counter-rotate from the one
+physical `J4_END_EFFECTOR` command. Training dynamics must wait for physical
+mass, inertia, friction, servo response, and joint-limit data.
 
 ## Physical calibration still required
 
-The existing PCA9685 and external 6 V/10 A supply are recorded, but the new
-arm's wiring is not. Confirm the actual SG90 label permits 6 V before connecting
-the servo rail. Then record, for each physical arm:
+The existing PCA9685 and external 6 V/10 A supply are recorded. Arm #1 is
+installed on channels 0 through 3. Confirm the actual SG90 label permits 6 V
+before connecting the servo rail. Then record:
 
-- installed state and PCA9685 channel for every joint;
-- safe lower, upper, and home pulse widths found at low speed;
+- safe lower, upper, and home pulse widths for Arm #1, found at low speed;
 - measured joint velocity and end-effector travel;
 - camera-to-base transform and workspace boundary;
 - payload and elbow deflection under guarded lift tests; and

@@ -53,6 +53,7 @@ class EdgeDemoResult:
     learned_facts: tuple[str, ...]
     response: str
     world_models: tuple[str, ...]
+    camera_verified: bool
 
 
 # This value exists only inside the no-hardware fixture. The active robot profile
@@ -387,7 +388,8 @@ def run_edge_demo(memory_path: str | Path | None = None) -> EdgeDemoResult:
                 ),
                 execute=True,
                 speak=True,
-            )
+            ),
+            post_action_capture=lambda: (frame,),
         )
         return EdgeDemoResult(
             result.plan.candidate.id,
@@ -397,6 +399,7 @@ def run_edge_demo(memory_path: str | Path | None = None) -> EdgeDemoResult:
             result.feedback.learned_facts,
             result.response_text,
             tuple(dict.fromkeys(item.model_kind for item in result.world_predictions)),
+            result.world_after is not None,
         )
     finally:
         if temporary is not None:

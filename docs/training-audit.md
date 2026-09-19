@@ -68,25 +68,25 @@ bimanual adaptation and validation wait for the second physical arm.
 3. MG996R and SG90 command pulses do not reveal actual joint position, stall,
    backlash, or deflection. Robot-specific policy and dynamics training therefore
    require external pose sensing or added joint feedback.
-4. The replacement arm's installed state has not been confirmed, and arm #2 is
-   still a future build. Bimanual policy and coordination-model training can use
-   simulation, but no real bimanual dataset can be collected or validated yet.
+4. Arm #1 is installed with its four PCA9685 channels confirmed, while arm #2
+   is still a future build. Bimanual policy and coordination-model training can
+   use simulation, but no real bimanual dataset can be collected or validated yet.
 
-### High: model labels currently overstate implementations
+### High: offline components are integration fixtures
 
-1. `local-tactile-sparsh` names a SPARSH-style shared encoder, but no SPARSH
-   dependency, checkpoint, preprocessing pipeline, or trained head is present.
-   The offline implementation computes contact, force, slip, and stability from
-   already-structured normal/shear samples with deterministic equations.
-2. The six offline world-model routes share one deterministic state-space
+The earlier `local-tactile-sparsh` label was corrected to
+`local-tactile-signal`; the implementation consumes already-structured
+normal/shear samples and does not claim a SPARSH checkpoint.
+
+1. The six offline world-model routes share one deterministic state-space
    fixture. Its object lift trajectory, collision probabilities, uncertainty,
    and task success are hand-authored formulas rather than learned predictions.
-3. The offline manipulation specialists convert semantic steps to action chunks
+2. The offline manipulation specialists convert semantic steps to action chunks
    with rules. They do not infer robot actions from images or demonstrations.
-4. The offline outcome, failure, load, reward, and feedback components are
+3. The offline outcome, failure, load, reward, and feedback components are
    telemetry rules. They are useful safety and integration baselines, but they
    are not trained models.
-5. The Baseten router now performs frozen prototype-cosine routing over a
+4. The Baseten router now performs frozen prototype-cosine routing over a
    compatible, allow-listed pool using task text, specialist descriptions, and
    representative phrases. It requires metadata evaluation rather than weight
    training. It does not optimize latency/cost or adapt weights from outcomes.

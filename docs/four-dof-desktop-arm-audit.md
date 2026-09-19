@@ -57,21 +57,19 @@ The migration removed facts that belonged only to the previous robot:
 - 25 g simulation payload and 0.5 N m torque evidence; and
 - the claim that physical arm 1 was this CAD design.
 
-No replacement value was guessed. Unknown axes, limits, link lengths, payload,
-wiring, installed state, and collision geometry are `null` and appear as
-readiness issues.
+No replacement value was guessed. Fusion subsequently established the axes and
+link lengths, and the user confirmed Arm #1's installed state and channel map.
+Unknown limits, payload, pulse endpoints, and collision validation remain
+`null` and appear as readiness issues.
 
 ## Electrical state
 
 The user-confirmed controller remains a PCA9685 with an external 6 V/10 A
 supply. That rating is present in the profile, while power validation remains
 false. The exact SG90 variants must explicitly permit 6 V; their label or
-manufacturer data takes precedence over generic SG90 specifications. The new
-joint-to-channel map and pulse endpoints are empty, so the driver cannot start.
-
-This is also why the code does not carry the old channel 0–3 map into the new
-arm. A channel number can be reused after physical confirmation, but reuse is a
-calibration result rather than a property of the CAD.
+manufacturer data takes precedence over generic SG90 specifications. Arm #1's
+base, shoulder, elbow, and gripper are confirmed on PCA9685 channels 0, 1, 2,
+and 3. Pulse endpoints remain empty, so the driver cannot start.
 
 ## Software changes
 
@@ -82,11 +80,20 @@ are model-neutral, and the CLI reports the mixed-servo inventory plus the 3MF
 inspection.
 
 The Fusion exporter no longer searches for the retired component names. It
-exports every assembly occurrence and only produces canonical link meshes when
-the imported assembly exposes the five configured link names. It also requires
-the four configured joint names before setting `complete: true`. The merge
-copies joint axes as operational axes and accepts limits only when Fusion also
-provides a rest position.
+exports every assembly occurrence and B-Rep body, then groups the original
+occurrence names into five canonical links using `fusion_mapping.json`.
+Analytic cylindrical faces provide named sources for the four revolute axes, so
+manual Fusion joints are unnecessary. Missing or ambiguous source features fail
+the fit. The merge validated the 0.001 m STL scale, recovered 154.14 mm and
+100.10 mm link spacing, and produced five canonical link-local meshes plus
+fixed, primary, and mirror gripper mechanism meshes.
+
+The CAD-derived MuJoCo model compiles on MuJoCo 3.13 as seven bodies, seven
+meshes, five hinge coordinates, and one gear equality. The equality couples the
+two finger hinges at -1:1, leaving four commanded degrees of freedom. Its four
+hierarchy motion checks, counter-rotation check, and 100-step zero-gravity
+validation pass. This establishes the kinematic topology without claiming
+calibrated physical dynamics.
 
 The PCA9685 driver remains data-driven. It receives channels, direction, pulse
 endpoints, and bounds from the validated profile and has no MG996R-only logic.
@@ -95,11 +102,10 @@ calibration map.
 
 ## Remaining blockers
 
-Before simulation training, export the assembled geometry and build the MuJoCo
-model. Before physical motion, additionally complete:
+Before dynamics training or physical motion, complete:
 
-- exact joint axes, origins, limits, homes, link lengths, and mesh scale;
-- current arm build state and both arms' eventual channel maps;
+- physical joint limits, homes, velocities, mass, inertia, friction, and servo response;
+- Arm #2's eventual build state and channel map;
 - SG90 voltage compatibility and simultaneous-load power test;
 - slow pulse endpoint and speed calibration for all four actuators;
 - end-effector aperture, direction, force, and grip-friction measurements;
@@ -107,6 +113,12 @@ model. Before physical motion, additionally complete:
 - guarded payload tests focused on SG90 elbow deflection; and
 - independent stop/output-enable validation.
 
-Simulation training can begin after the digital twin exists. Its outputs still
-cannot establish real pulse endpoints, backlash, camera extrinsics, electrical
+Fusion omitted one non-meshable or hidden body under
+`Sharma_Ishaan_rotateBase:1`; 36 of 37 mapped occurrences otherwise match their
+metric bounds within 0.1 mm. Confirm that omitted body is non-physical before
+marking collision geometry validated.
+
+Kinematic dataset and rendering work can begin now. Physics policy and dynamics
+training must wait for the physical values above. Simulation outputs cannot
+establish real pulse endpoints, backlash, camera extrinsics, electrical
 brownout behavior, printed fit, or physical payload capacity.

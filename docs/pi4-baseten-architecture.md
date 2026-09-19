@@ -230,22 +230,23 @@ rating or joint limit from the retired arm is carried into this profile.
 
 The supplied 3MF establishes millimetre print geometry for 12 unique meshes,
 but its transforms are slicer plate placement rather than assembly poses. The
-SolidWorks/Fusion export must supply the digital twin's joint frames and link
-transforms. The existing PCA9685 and 6 V/10 A supply are recorded, while the new
-installation state, channels, pulse endpoints, and SG90 voltage compatibility
+SolidWorks/Fusion export now supplies five assembled link meshes, four analytic
+joint axes, a Y-up frame, and 154.14 mm/100.10 mm link spacing. The kinematic
+MuJoCo model compiles and passes per-joint hierarchy checks. The existing
+PCA9685 and 6 V/10 A supply are recorded. Arm #1 is installed with channels
+0–3 assigned in joint order; pulse endpoints and SG90 voltage compatibility
 remain unconfirmed. The future two-arm simulation fixture can continue to
 exercise coordination, but production bimanual control stays unavailable until
 both physical installations have independent calibration records.
 
-The CAD model is not yet motion-ready. Exact link lengths, parent-frame joint
-origins and axes, validated collision-mesh scale, coordinate frame, joint limits,
-joint velocity limits,
+The robot is not yet motion-ready. Physical joint limits and velocities,
 actuator mapping, bimanual mount spacing, gripper aperture/force/speed, control
 frequency, clearance, payload testing, safety thresholds, controller timing,
-and physical calibration are required before the local kinematics, trajectory,
-collision, safety, feedback, orchestration, and hardware components can be
-constructed from it. Their `from_robot_model(...)` factories enforce the same
-gate. `moira robot-model-check` reports every missing value. See the
+mass/inertia/friction, and physical calibration are still required before the
+local kinematics, trajectory, collision, safety, feedback, orchestration, and
+hardware components can be constructed from it. Their
+`from_robot_model(...)` factories enforce the same gate. `moira
+robot-model-check` reports every missing value. See the
 [arm audit](four-dof-desktop-arm-audit.md) for the recovered metadata and
 export procedure.
 

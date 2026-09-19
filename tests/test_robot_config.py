@@ -125,11 +125,19 @@ def test_active_robot_profile_matches_new_sources_and_blocks_motion():
     assert model.payload_limit_kg is None
     assert model.servo_controller.servo_supply_voltage == 6.0
     assert model.servo_controller.servo_supply_current_a == 10.0
-    assert model.servo_controller.installed_arms == ()
+    assert model.servo_controller.installed_arms == ("left",)
+    assert {
+        name: calibration.channel
+        for name, calibration in model.servo_controller.actuators["left"].items()
+    } == {
+        "J1_BASE_YAW": 0,
+        "J2_SHOULDER": 1,
+        "J3_ELBOW": 2,
+        "J4_END_EFFECTOR": 3,
+    }
     assert all(
         calibration.channel is None
-        for mapping in model.servo_controller.actuators.values()
-        for calibration in mapping.values()
+        for calibration in model.servo_controller.actuators["right"].values()
     )
     assert [joint.name for joint in model.kinematic_joints] == [
         "J1_BASE_YAW",
@@ -139,8 +147,9 @@ def test_active_robot_profile_matches_new_sources_and_blocks_motion():
     assert model.gripper_joint.name == "J4_END_EFFECTOR"
     assert not model.motion_ready
     assert "validated payload limit" in model.readiness_issues
-    assert "joint axes" in model.readiness_issues
+    assert "joint axes" not in model.readiness_issues
     assert "joint limits and home positions" in model.readiness_issues
+    assert "PCA9685 channel and pulse endpoint mapping" in model.readiness_issues
     with pytest.raises(RuntimeError, match="not motion-ready"):
         model.require_motion_ready()
 
@@ -192,6 +201,25 @@ def test_motion_components_use_calibrated_robot_profile():
     }
     assert system.robot_model_id == model.model_id
     assert system.gripper_geometry["max_width_m"] == 0.08
+
+
+def test_single_installed_arm_does_not_require_bimanual_mount_geometry():
+    value = _motion_ready_mapping()
+    value["bimanual_mount"] = {"shoulder_offset_m": None}
+    value["servo_controller"]["arm_installations"]["right"]["installed"] = False
+    for calibration in value["servo_controller"]["actuators"]["right"].values():
+        calibration.update(
+            channel=None,
+            pulse_at_lower_us=None,
+            pulse_at_upper_us=None,
+        )
+    model = RobotModel.from_mapping(value)
+    assert model.motion_ready
+    assert not model.bimanual_motion_ready
+    assert model.bimanual_readiness_issues == (
+        "arm_2 is not marked installed",
+        "bimanual shoulder offset",
+    )
 
 
 def test_fusion_export_merge_populates_geometry_origins_axes_and_meshes(tmp_path):

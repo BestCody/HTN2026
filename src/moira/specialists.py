@@ -929,6 +929,11 @@ class TelemetryOutcomeVerifier:
                     ),
                     default=0.0,
                 ),
+                "camera_verified": request.world_after is not None,
+                "objects_before": len(request.world_before.objects),
+                "objects_after": (
+                    len(request.world_after.objects) if request.world_after is not None else None
+                ),
             },
         )
 

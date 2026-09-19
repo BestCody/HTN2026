@@ -1,0 +1,262 @@
+"""Generate a MuJoCo kinematic-validation model from a merged MoIRA robot model."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+from pathlib import Path
+from typing import Any
+from xml.etree import ElementTree as ET
+
+CHAIN = (
+    ("fixed_base", None, None),
+    ("turntable", "fixed_base", "J1_BASE_YAW"),
+    ("upper_arm", "turntable", "J2_SHOULDER"),
+    ("forearm", "upper_arm", "J3_ELBOW"),
+)
+LOGICAL_JOINTS = {
+    "J1_BASE_YAW",
+    "J2_SHOULDER",
+    "J3_ELBOW",
+    "J4_END_EFFECTOR",
+}
+CANONICAL_MESHES = {"fixed_base", "turntable", "upper_arm", "forearm", "end_effector"}
+MECHANISM_MESHES = {"fixed", "primary", "mirror"}
+
+
+def _vector(value: object, label: str) -> tuple[float, float, float]:
+    if not isinstance(value, list) or len(value) != 3:
+        raise ValueError(f"{label} must contain three numbers")
+    result = tuple(float(item) for item in value)
+    if any(not math.isfinite(item) for item in result):
+        raise ValueError(f"{label} must be finite")
+    return result
+
+
+def _values(value: tuple[float, ...]) -> str:
+    return " ".join(f"{item:.12g}" for item in value)
+
+
+def _joint_by_name(model: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    joints = model.get("joints")
+    if not isinstance(joints, list):
+        raise ValueError("Robot model does not contain joints")
+    result = {
+        str(item.get("name")): item
+        for item in joints
+        if isinstance(item, dict) and item.get("name")
+    }
+    if set(result) != LOGICAL_JOINTS:
+        raise ValueError("Robot model joints do not match the four-DOF topology")
+    return result
+
+
+def _mesh_path(model_path: Path, relative: object, label: str) -> Path:
+    if not isinstance(relative, str) or not relative:
+        raise ValueError(f"Missing merged mesh for {label}")
+    root = model_path.parent.resolve()
+    path = (root / relative).resolve()
+    if not path.is_file() or (path != root and root not in path.parents):
+        raise ValueError(f"Invalid merged mesh for {label}: {path}")
+    return path
+
+
+def _joint_attributes(name: str, joint: dict[str, Any]) -> dict[str, str]:
+    result = {
+        "name": name,
+        "type": "hinge",
+        "axis": _values(_vector(joint.get("axis"), f"{name} axis")),
+    }
+    lower, upper = joint.get("lower_deg"), joint.get("upper_deg")
+    if lower is None or upper is None:
+        result["limited"] = "false"
+    else:
+        result["range"] = _values(
+            (math.radians(float(lower)), math.radians(float(upper)))
+        )
+    return result
+
+
+def generate(model_path: Path, output_path: Path) -> ET.ElementTree:
+    model = json.loads(model_path.read_text(encoding="utf-8"))
+    meshes = model.get("meshes")
+    if not isinstance(meshes, dict) or set(meshes) != CANONICAL_MESHES:
+        raise ValueError("Robot model must contain all five merged link meshes")
+    mechanism = model.get("gripper_mechanism")
+    if not isinstance(mechanism, dict):
+        raise ValueError("Robot model does not contain the coupled gripper mechanism")
+    mechanism_meshes = mechanism.get("meshes")
+    if not isinstance(mechanism_meshes, dict) or set(mechanism_meshes) != MECHANISM_MESHES:
+        raise ValueError("Robot model must contain all three gripper mechanism meshes")
+    coordinate_frame = model.get("coordinate_frame")
+    if coordinate_frame != {"ground_plane": "XZ", "up_axis": "Y"}:
+        raise ValueError("MuJoCo generator currently requires the exported XZ/Y-up frame")
+    joints = _joint_by_name(model)
+    primary_name = str(mechanism.get("primary_joint"))
+    mirror_name = str(mechanism.get("mirror_joint"))
+    if primary_name != "J4_END_EFFECTOR" or not mirror_name:
+        raise ValueError("Gripper mechanism joint names do not match the robot topology")
+    gear_ratio = float(mechanism.get("gear_ratio", 0))
+    if not math.isfinite(gear_ratio) or gear_ratio == 0:
+        raise ValueError("Gripper gear ratio must be finite and nonzero")
+
+    root = ET.Element("mujoco", {"model": str(model.get("model_id", "moira-robot"))})
+    root.append(
+        ET.Comment(
+            "Kinematic validation only: zero gravity, no actuators, and no invented "
+            "joint limits or dynamics."
+        )
+    )
+    ET.SubElement(
+        root,
+        "compiler",
+        {
+            "angle": "radian",
+            "meshdir": "meshes",
+            "autolimits": "true",
+            "balanceinertia": "true",
+        },
+    )
+    ET.SubElement(root, "option", {"gravity": "0 0 0"})
+    asset = ET.SubElement(root, "asset")
+    asset_specs = {
+        component: meshes[component]
+        for component in ("fixed_base", "turntable", "upper_arm", "forearm")
+    }
+    asset_specs.update(
+        {f"gripper_{name}": mechanism_meshes[name] for name in sorted(MECHANISM_MESHES)}
+    )
+    for name, relative in asset_specs.items():
+        path = _mesh_path(model_path, relative, name)
+        ET.SubElement(
+            asset,
+            "mesh",
+            {
+                "name": name,
+                "file": path.name,
+                "scale": "1 1 1",
+                "inertia": "convex",
+            },
+        )
+
+    worldbody = ET.SubElement(root, "worldbody")
+    bodies: dict[str, ET.Element] = {}
+    world_origins: dict[str, tuple[float, float, float]] = {
+        "fixed_base": (0.0, 0.0, 0.0)
+    }
+    for component, parent, joint_name in CHAIN:
+        if parent is None:
+            body = ET.SubElement(worldbody, "body", {"name": component})
+        else:
+            joint = joints[str(joint_name)]
+            world_origin = _vector(joint.get("origin_m"), f"{joint_name} origin")
+            parent_origin = world_origins[parent]
+            relative = tuple(world_origin[index] - parent_origin[index] for index in range(3))
+            body = ET.SubElement(
+                bodies[parent], "body", {"name": component, "pos": _values(relative)}
+            )
+            ET.SubElement(body, "joint", _joint_attributes(str(joint_name), joint))
+            world_origins[component] = world_origin
+        ET.SubElement(
+            body,
+            "geom",
+            {
+                "name": f"{component}_mesh",
+                "type": "mesh",
+                "mesh": component,
+                "rgba": "0.55 0.62 0.72 1",
+            },
+        )
+        bodies[component] = body
+
+    forearm = bodies["forearm"]
+    ET.SubElement(
+        forearm,
+        "geom",
+        {
+            "name": "gripper_fixed_mesh",
+            "type": "mesh",
+            "mesh": "gripper_fixed",
+            "rgba": "0.48 0.54 0.64 1",
+        },
+    )
+    forearm_origin = world_origins["forearm"]
+    primary = joints[primary_name]
+    primary_origin = _vector(primary.get("origin_m"), f"{primary_name} origin")
+    primary_relative = tuple(
+        primary_origin[index] - forearm_origin[index] for index in range(3)
+    )
+    primary_body = ET.SubElement(
+        forearm,
+        "body",
+        {"name": "gripper_primary", "pos": _values(primary_relative)},
+    )
+    ET.SubElement(primary_body, "joint", _joint_attributes(primary_name, primary))
+    ET.SubElement(
+        primary_body,
+        "geom",
+        {
+            "name": "gripper_primary_mesh",
+            "type": "mesh",
+            "mesh": "gripper_primary",
+            "rgba": "0.26 0.55 0.82 1",
+        },
+    )
+
+    mirror_origin = _vector(mechanism.get("mirror_origin_m"), "gripper mirror origin")
+    mirror_relative = tuple(
+        mirror_origin[index] - forearm_origin[index] for index in range(3)
+    )
+    mirror_body = ET.SubElement(
+        forearm,
+        "body",
+        {"name": "gripper_mirror", "pos": _values(mirror_relative)},
+    )
+    mirror_joint = {
+        "axis": list(_vector(mechanism.get("mirror_axis"), "gripper mirror axis")),
+        "lower_deg": None,
+        "upper_deg": None,
+    }
+    ET.SubElement(mirror_body, "joint", _joint_attributes(mirror_name, mirror_joint))
+    ET.SubElement(
+        mirror_body,
+        "geom",
+        {
+            "name": "gripper_mirror_mesh",
+            "type": "mesh",
+            "mesh": "gripper_mirror",
+            "rgba": "0.26 0.55 0.82 1",
+        },
+    )
+
+    equality = ET.SubElement(root, "equality")
+    ET.SubElement(
+        equality,
+        "joint",
+        {
+            "name": "J4_GEAR_COUPLING",
+            "joint1": primary_name,
+            "joint2": mirror_name,
+            "polycoef": _values((0.0, gear_ratio, 0.0, 0.0, 0.0)),
+        },
+    )
+
+    ET.indent(root, space="  ")
+    tree = ET.ElementTree(root)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tree.write(output_path, encoding="utf-8", xml_declaration=True)
+    return tree
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("model", type=Path)
+    parser.add_argument("output", type=Path)
+    args = parser.parse_args()
+    generate(args.model, args.output)
+    print(f"Wrote kinematic-validation MJCF to {args.output.resolve()}")
+
+
+if __name__ == "__main__":
+    main()
