@@ -1,11 +1,4 @@
 # Charlie
-
-<<<<<<< HEAD
-Charlie is a safety-first physical AI system that turns a spoken request into a
-grounded, simulated, and locally validated robot action. Instead of asking one
-large model to do everything, Charlie coordinates specialized models for
-speech, vision, intent grounding, planning, manipulation, dynamics, reward,
-and outcome verification.
 =======
  Demo: https://youtube.com/shorts/cJ961L4WOBA
 
