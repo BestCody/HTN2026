@@ -1,0 +1,36 @@
+{
+  "model": "robot_models/four_dof_desktop_arm/physical_three_actuator_validation.xml",
+  "mujoco_version": "3.13.0",
+  "topology": {
+    "nq": 4,
+    "nv": 4,
+    "nbody": 7,
+    "ngeom": 7,
+    "nmesh": 7,
+    "nu": 0,
+    "neq": 1
+  },
+  "steps": 100,
+  "finite_state": true,
+  "motion_checks": {
+    "J1_BASE_YAW": {
+      "upstream_displacement_m": 0.0,
+      "downstream_change": 0.0016094583084933962,
+      "change_kind": "position_m"
+    },
+    "J2_SHOULDER": {
+      "upstream_displacement_m": 0.0,
+      "downstream_change": 0.03843516859375959,
+      "change_kind": "position_m"
+    },
+    "J3_GRIPPER": {
+      "upstream_displacement_m": 0.0,
+      "downstream_change": 0.35263339767727736,
+      "change_kind": "rotation_matrix",
+      "mirror_rotation_matrix_change": 0.35263339767727736,
+      "gear_ratio": -1.0
+    }
+  },
+  "layout": "yaw_shoulder_fixed_link",
+  "scope": "fixed_elbow_kinematic_validation"
+}

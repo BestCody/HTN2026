@@ -98,8 +98,10 @@ def test_deployable_router_semantically_ranks_only_allowed_specialists(monkeypat
         )
     ).model_dump()
 
+    assert router._encoder.model_id == "model"
     assert result["component_id"] == "baseten-bimanual-act"
-    assert result["strategy"] == "minilm_prototype_cosine"
+    assert result["strategy"] == "minilm_prototype_centroid_cosine"
+    assert result["model"] == "moira-specialist-router-minilm-l6-v2"
     assert {item["component_id"] for item in result["scores"]} == {
         "baseten-waypoint-policy",
         "baseten-bimanual-act",

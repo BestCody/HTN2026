@@ -44,7 +44,8 @@ def test_terminal_trace_explains_router_prediction_and_motor_lock():
     )
 
     rendered = output.getvalue()
-    assert "MiniLM selected baseten-waypoint-policy" in rendered
+    assert "MiniLM selected\nMovement Specialist" in rendered
+    assert "internal route baseten-waypoint-policy" in rendered
     assert "2.50s" in rendered
     assert "score=0.870" in rendered
     assert "MOTOR OUTPUT LOCKED" in rendered
@@ -67,6 +68,19 @@ def test_terminal_trace_shows_exact_component_model_route():
     )
 
     rendered = output.getvalue()
-    assert "PERCEPTION / perception.scene  >>>  baseten-vision-scene" in rendered
-    assert "[zai-org/GLM-5.3-Flash]" in rendered
+    assert "PERCEPTION  >>>  Vision Specialist" in rendered
+    assert "model=zai-org/GLM-5.3-Flash" in rendered
     assert "via=registry" in rendered
+
+
+def test_terminal_heading_uses_charlie_public_brand():
+    from moira.software_integration import load_software_integration_config
+
+    output = StringIO()
+    trace = JudgeDemoTrace(output, color=False)
+    trace.heading(load_software_integration_config("config/software_integration.json"))
+
+    rendered = output.getvalue()
+    assert "CHARLIE" in rendered
+    assert "TASK ROUTER" in rendered
+    assert "MoIRA ROUTER" not in rendered

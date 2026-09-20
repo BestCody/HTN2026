@@ -107,19 +107,6 @@
       "pi_compatible": true
     },
     {
-      "id": "baseten-bimanual-act",
-      "layer": "manipulation",
-      "capabilities": [
-        "manipulation.bimanual"
-      ],
-      "model": "LAN:trained-bimanual-policy-required",
-      "runtime": "remote",
-      "estimated_ram_mb": 8,
-      "priority": 30,
-      "max_concurrency": 2,
-      "pi_compatible": true
-    },
-    {
       "id": "baseten-pour-policy",
       "layer": "manipulation",
       "capabilities": [
@@ -250,19 +237,6 @@
       "pi_compatible": true
     },
     {
-      "id": "baseten-bimanual-world",
-      "layer": "world",
-      "capabilities": [
-        "world.bimanual_coordination"
-      ],
-      "model": "LAN:trained-bimanual-world-required",
-      "runtime": "remote",
-      "estimated_ram_mb": 8,
-      "priority": 20,
-      "max_concurrency": 2,
-      "pi_compatible": true
-    },
-    {
       "id": "baseten-deformable-world",
       "layer": "world",
       "capabilities": [
@@ -334,8 +308,7 @@
       "id": "dual-arm-hardware",
       "layer": "control",
       "capabilities": [
-        "control.single_arm",
-        "control.bimanual"
+        "control.single_arm"
       ],
       "model": "ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json",
       "runtime": "hardware",

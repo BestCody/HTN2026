@@ -1,5 +1,9 @@
 # Four-DOF desktop arm audit
 
+> This records the original four-actuator CAD audit. The active physical profile
+> is `physical_three_actuator_model.json`; its elbow is rigid and channel 2 is
+> disabled.
+
 Audit date: 2026-09-19.
 
 The active robot changed from the retired lightweight Fusion arm to the

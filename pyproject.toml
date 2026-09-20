@@ -15,7 +15,9 @@ embeddings = ["sentence-transformers>=3.4,<6"]
 prompt = ["transformers>=4.56,<6", "torch>=2.6,<3"]
 adapters = ["peft>=0.15,<1", "torch>=2.6,<3"]
 hardware = ["Adafruit-Blinka>=9,<10", "adafruit-circuitpython-pca9685>=3.4.22,<4"]
-camera = ["opencv-python-headless>=4.10,<5"]
+guarded-demo = ["paramiko>=3.4,<6"]
+camera = ["opencv-python-headless>=4.10,<5", "Pillow>=11,<13"]
+simulation = ["mujoco>=3.3,<4", "numpy>=2,<3", "safetensors>=0.5,<1"]
 rtx-voice = [
     "faster-whisper==1.2.1",
     "ctranslate2==4.6.3",

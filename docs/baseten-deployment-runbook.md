@@ -13,7 +13,7 @@ fixture or a general model.
 | API access | Ready | The Management API accepts the ignored local API key. |
 | Whisper Large V3 Turbo | RTX LAN, live-tested | CUDA transcription exactly recovered the Kokoro-generated pick/place command. |
 | Kokoro-82M | RTX LAN, live-tested | The pinned CUDA model produced a valid 24 kHz WAV response. |
-| Frozen MiniLM semantic router | Production Chain, live-tested | The CPU Chain selected the bimanual specialist from an allowed waypoint/bimanual pool. MiniLM is baked into the image and loaded offline. |
+| MiniLM semantic router | Existing production Chain is live-tested; replacement checkpoint is local | The accepted fine-tuned checkpoint scored 100% in typed manipulation and world pools. It is staged locally but has not been repushed to the billable Chain. |
 | Deterministic physical planner | Production Chain, live-tested | It generated three single-arm candidates and selected the highest-scoring safe simulation. |
 | GLM vision and grounded voice NLP | Baseten Model API, live-tested | Strict structured outputs detected the red block/blue tray and grounded both roles without inventing a destination. |
 | Grasp, policy, dynamics, world, reward, outcome | Pre-training integration stand-ins only | Their real endpoints require calibration or trained checkpoints. The stand-ins exist only in the non-actuating integration profile. |

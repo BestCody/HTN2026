@@ -1,5 +1,12 @@
 # Robot model training audit
 
+> Historical twelve-hour audit. The active six-hour execution decision is in
+> [training-playbook.md](training-playbook.md): fine-tune only the specialist
+> router and use the fixed-elbow CAD/MuJoCo model directly.
+> The router checkpoint has now passed its acceptance gate and is staged locally
+> for the next Baseten Chain deployment. The existing live Chain remains the
+> earlier frozen deployment until it is explicitly repushed.
+
 Audit date: 2026-09-19.
 
 ## Conclusion

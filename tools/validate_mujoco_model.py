@@ -12,7 +12,37 @@ from xml.etree import ElementTree as ET
 def validate(model_path: Path, *, steps: int = 100) -> dict[str, object]:
     import mujoco
 
-    coupling = ET.parse(model_path).getroot().find("equality/joint")
+    root = ET.parse(model_path).getroot()
+    joint_names = {
+        item.attrib["name"] for item in root.findall("worldbody//joint")
+    }
+    legacy = {
+        "J1_BASE_YAW",
+        "J2_SHOULDER",
+        "J3_ELBOW",
+        "J4_END_EFFECTOR",
+        "J4_END_EFFECTOR_MIRROR",
+    }
+    fixed_elbow = {
+        "J1_BASE_YAW",
+        "J2_SHOULDER",
+        "J3_GRIPPER",
+        "J3_GRIPPER_MIRROR",
+    }
+    if joint_names == legacy:
+        layout = "yaw_shoulder_elbow"
+        primary_joint = "J4_END_EFFECTOR"
+        mirror_joint = "J4_END_EFFECTOR_MIRROR"
+        expected_nq = 5
+    elif joint_names == fixed_elbow:
+        layout = "yaw_shoulder_fixed_link"
+        primary_joint = "J3_GRIPPER"
+        mirror_joint = "J3_GRIPPER_MIRROR"
+        expected_nq = 4
+    else:
+        raise ValueError(f"Unexpected MuJoCo joint topology: {sorted(joint_names)}")
+
+    coupling = root.find("equality/joint")
     if coupling is None:
         raise ValueError("MuJoCo model is missing the gripper gear coupling")
     coefficients = tuple(float(value) for value in coupling.attrib["polycoef"].split())
@@ -26,8 +56,8 @@ def validate(model_path: Path, *, steps: int = 100) -> dict[str, object]:
     model = mujoco.MjModel.from_xml_path(str(model_path.resolve()))
     data = mujoco.MjData(model)
     expected = {
-        "nq": 5,
-        "nv": 5,
+        "nq": expected_nq,
+        "nv": expected_nq,
         "nbody": 7,
         "ngeom": 7,
         "nmesh": 7,
@@ -56,20 +86,15 @@ def validate(model_path: Path, *, steps: int = 100) -> dict[str, object]:
     home_positions = {name: data.xpos[index].copy() for name, index in body_ids.items()}
     home_rotations = {name: data.xmat[index].copy() for name, index in body_ids.items()}
     motion_checks = {}
-    checks = (
+    checks = [
         ("J1_BASE_YAW", "upper_arm", "turntable", False),
         ("J2_SHOULDER", "forearm", "upper_arm", False),
-        ("J3_ELBOW", "gripper_primary", "forearm", False),
-        ("J4_END_EFFECTOR", "gripper_primary", "forearm", True),
-    )
+    ]
+    if layout == "yaw_shoulder_elbow":
+        checks.append(("J3_ELBOW", "gripper_primary", "forearm", False))
+    checks.append((primary_joint, "gripper_primary", "forearm", True))
     qpos_addresses = {}
-    for name in (
-        "J1_BASE_YAW",
-        "J2_SHOULDER",
-        "J3_ELBOW",
-        "J4_END_EFFECTOR",
-        "J4_END_EFFECTOR_MIRROR",
-    ):
+    for name in joint_names:
         joint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
         if joint_id < 0:
             raise ValueError(f"MuJoCo model is missing joint {name}")
@@ -77,8 +102,8 @@ def validate(model_path: Path, *, steps: int = 100) -> dict[str, object]:
     for joint_name, moving_body, fixed_body, rotation_only in checks:
         data.qpos[:] = 0
         data.qpos[qpos_addresses[joint_name]] = 0.25
-        if joint_name == "J4_END_EFFECTOR":
-            data.qpos[qpos_addresses["J4_END_EFFECTOR_MIRROR"]] = 0.25 / coupling_ratio
+        if joint_name == primary_joint:
+            data.qpos[qpos_addresses[mirror_joint]] = 0.25 / coupling_ratio
         mujoco.mj_forward(model, data)
         fixed_delta = math.sqrt(
             sum(
@@ -115,7 +140,7 @@ def validate(model_path: Path, *, steps: int = 100) -> dict[str, object]:
             "downstream_change": moving_delta,
             "change_kind": "rotation_matrix" if rotation_only else "position_m",
         }
-        if joint_name == "J4_END_EFFECTOR":
+        if joint_name == primary_joint:
             mirror_delta = math.sqrt(
                 sum(
                     float(
@@ -144,7 +169,12 @@ def validate(model_path: Path, *, steps: int = 100) -> dict[str, object]:
         "steps": steps,
         "finite_state": True,
         "motion_checks": motion_checks,
-        "scope": "kinematic_validation_only",
+        "layout": layout,
+        "scope": (
+            "fixed_elbow_kinematic_validation"
+            if layout == "yaw_shoulder_fixed_link"
+            else "kinematic_validation_only"
+        ),
     }
 
 
@@ -156,6 +186,11 @@ def record_validation(
     visual_reviewed: bool,
 ) -> None:
     robot_model = json.loads(robot_model_path.read_text(encoding="utf-8"))
+    model_layout = robot_model.get("kinematics", {}).get(
+        "layout", "yaw_shoulder_elbow"
+    )
+    if model_layout != report.get("layout"):
+        raise ValueError("MuJoCo validation layout does not match the robot model")
     removable = {
         "the 3mf contains millimetre print-plate layouts rather than assembled link transforms",
         "collision meshes and a mujoco model have not been validated for this assembly",
@@ -180,6 +215,7 @@ def record_validation(
         "steps": report["steps"],
         "finite_state": report["finite_state"],
         "visual_reviewed": visual_reviewed,
+        "actuation_validated": False,
     }
     robot_model["kinematics_validated"] = True
     robot_model_path.write_text(json.dumps(robot_model, indent=2), encoding="utf-8")

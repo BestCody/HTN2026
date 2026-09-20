@@ -8,7 +8,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from threading import RLock
-from typing import Protocol
+from typing import Literal, Protocol
 
 from .experts import DescriptionStyle, Expert, ExpertRegistry
 
@@ -168,12 +168,12 @@ class EmbeddingRouter:
 
 
 class PrototypeEmbeddingRouter:
-    """Frozen cosine router over descriptions plus expert-owned example phrases.
+    """Cosine router over descriptions plus expert-owned example phrases.
 
     This keeps the paper's external metadata routing property while allowing a
     specialist to describe the planner vocabulary it accepts. Adding an expert
-    changes only its metadata; there is no trained routing head or task-to-ID
-    rule. Each expert receives its highest similarity across its prototypes.
+    changes only its metadata; there is no task-to-ID classification head.
+    Prototype scores can use either the highest match or a normalized centroid.
     """
 
     def __init__(
@@ -182,11 +182,14 @@ class PrototypeEmbeddingRouter:
         encoder: TextEncoder | None = None,
         *,
         style: DescriptionStyle = "simple",
+        aggregation: Literal["max", "centroid"] = "max",
     ) -> None:
         if not isinstance(registry, ExpertRegistry):
             raise TypeError("registry must be an ExpertRegistry")
         if style not in ("simple", "abstract"):
             raise ValueError(f"Unknown description style: {style}")
+        if aggregation not in ("max", "centroid"):
+            raise ValueError("Prototype aggregation must be max or centroid")
         if encoder is None:
             from .backends import SentenceTransformerEncoder
 
@@ -194,6 +197,7 @@ class PrototypeEmbeddingRouter:
         if not callable(getattr(encoder, "encode", None)):
             raise TypeError("encoder must implement encode(texts)")
         self.registry, self.encoder, self.style = registry, encoder, style
+        self.aggregation = aggregation
         self._cache_key: tuple[tuple[str, tuple[str, ...]], ...] = ()
         self._vectors: tuple[tuple[tuple[float, ...], ...], ...] = ()
         self._lock = RLock()
@@ -216,10 +220,10 @@ class PrototypeEmbeddingRouter:
             query = _normalize(self.encoder.encode([instruction]), 1)[0]
             if len(query) != len(self._vectors[0][0]):
                 raise RoutingError("Task and expert embedding dimensions do not match")
-            scores = tuple(
-                (
-                    expert.id,
-                    max(
+
+            def score(prototype_vectors: tuple[tuple[float, ...], ...]) -> float:
+                if self.aggregation == "max":
+                    return max(
                         max(
                             -1.0,
                             min(
@@ -231,7 +235,30 @@ class PrototypeEmbeddingRouter:
                             ),
                         )
                         for vector in prototype_vectors
+                    )
+                centroid = tuple(
+                    math.fsum(vector[index] for vector in prototype_vectors)
+                    / len(prototype_vectors)
+                    for index in range(len(query))
+                )
+                norm = math.hypot(*centroid)
+                if norm == 0 or not math.isfinite(norm):
+                    raise RoutingError("Prototype centroid has an invalid norm")
+                return max(
+                    -1.0,
+                    min(
+                        1.0,
+                        math.fsum(
+                            left * right / norm
+                            for left, right in zip(query, centroid, strict=True)
+                        ),
                     ),
+                )
+
+            scores = tuple(
+                (
+                    expert.id,
+                    score(prototype_vectors),
                 )
                 for expert, prototype_vectors in zip(experts, self._vectors, strict=True)
             )
@@ -240,7 +267,12 @@ class PrototypeEmbeddingRouter:
             if len(scores) > 1:
                 runner_up = max(score for expert_id, score in scores if expert_id != winner[0])
                 margin = winner[1] - runner_up
-            return RoutingDecision(winner[0], "prototype_embedding", scores, margin)
+            strategy = (
+                "prototype_embedding"
+                if self.aggregation == "max"
+                else "prototype_centroid_embedding"
+            )
+            return RoutingDecision(winner[0], strategy, scores, margin)
 
 
 @dataclass(frozen=True)

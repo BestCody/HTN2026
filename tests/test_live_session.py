@@ -1,14 +1,22 @@
 import json
 import sys
 from base64 import b64encode
+from io import BytesIO
 from pathlib import Path
 from time import time
 from types import ModuleType
 
 import pytest
+from PIL import Image
 
 from moira.components import ComponentRegistry
-from moira.edge_components import AlsaCommandRecorder, LanCameraSource, OpenCVCameraSource
+from moira.edge_components import (
+    AlsaCommandRecorder,
+    FfmpegDshowCommandRecorder,
+    LanCameraSource,
+    OpenCVCameraSource,
+    V4L2JpegSource,
+)
 from moira.physical import (
     CameraFrame,
     OutcomeInput,
@@ -140,6 +148,103 @@ def test_lan_camera_rejects_wrong_camera_identity(monkeypatch):
         source.capture()
 
 
+def test_lan_camera_applies_configured_rotation(monkeypatch):
+    original = Image.new("RGB", (40, 20))
+    for x in range(20):
+        for y in range(10):
+            original.putpixel((x, y), (255, 0, 0))
+    image_bytes = BytesIO()
+    original.save(image_bytes, format="JPEG", quality=100, subsampling=0)
+    payload = json.dumps(
+        {
+            "camera_id": "co6-usb",
+            "captured_at": 123.5,
+            "media_type": "image/jpeg",
+            "data_base64": b64encode(image_bytes.getvalue()).decode("ascii"),
+        }
+    ).encode()
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self, limit):
+            return payload
+
+    monkeypatch.setattr(
+        "moira.edge_components.urllib.request.urlopen", lambda request, timeout: Response()
+    )
+    frame = LanCameraSource(
+        "http://robot-brain.local:8765/v1/camera",
+        token="secret",
+        camera_id="co6-usb",
+        rotation_degrees=180,
+    ).capture()
+
+    with Image.open(BytesIO(frame.data)) as rotated:
+        assert rotated.size == (40, 20)
+        red = rotated.convert("RGB").getpixel((30, 15))
+        assert red[0] > 180
+        assert red[0] > red[1] * 2
+        assert red[0] > red[2] * 2
+
+
+def test_v4l2_camera_captures_native_mjpeg_without_opencv(monkeypatch):
+    calls = []
+
+    class Result:
+        stdout = b"\xff\xd8\xffcamera-data\xff\xd9"
+        stderr = b"<"
+
+    def run(command, **options):
+        calls.append((command, options))
+        return Result()
+
+    monkeypatch.setattr("moira.edge_components.subprocess.run", run)
+    source = V4L2JpegSource(
+        "/dev/v4l/by-id/co6-video-index0",
+        width=640,
+        height=480,
+        fps=30,
+    )
+    frame = source.capture()
+
+    assert frame.camera_id == "co6-usb"
+    assert frame.data == Result.stdout
+    command, options = calls[0]
+    assert command[0] == "v4l2-ctl"
+    assert "--silent" in command
+    assert "--device=/dev/v4l/by-id/co6-video-index0" in command
+    assert "--set-fmt-video=width=640,height=480,pixelformat=MJPG" in command
+    assert options == {"check": True, "capture_output": True, "timeout": 5.0}
+
+
+def test_v4l2_camera_rejects_non_jpeg_frame(monkeypatch):
+    class Result:
+        stdout = b"not-a-jpeg"
+        stderr = b""
+
+    monkeypatch.setattr(
+        "moira.edge_components.subprocess.run", lambda command, **options: Result()
+    )
+    with pytest.raises(RuntimeError, match="JPEG frame"):
+        V4L2JpegSource("/dev/video0").capture()
+
+
+def test_v4l2_camera_adds_missing_uvc_jpeg_end_marker(monkeypatch):
+    class Result:
+        stdout = b"\xff\xd8\xffcamera-without-eoi"
+        stderr = b""
+
+    monkeypatch.setattr(
+        "moira.edge_components.subprocess.run", lambda command, **options: Result()
+    )
+    assert V4L2JpegSource("/dev/video0").capture().data.endswith(b"\xff\xd9")
+
+
 def test_alsa_recorder_emits_wav_without_a_fallback(monkeypatch):
     calls = []
 
@@ -159,6 +264,28 @@ def test_alsa_recorder_emits_wav_without_a_fallback(monkeypatch):
     assert command[-2:] == ["wav", "-"]
     assert options["check"] is True
     assert options["timeout"] == 6.0
+
+
+def test_windows_recorder_emits_pcm_wav_without_a_fallback(monkeypatch):
+    calls = []
+
+    class Result:
+        stdout = b"\x01\x00" * 64
+        stderr = b""
+
+    def run(command, **options):
+        calls.append((command, options))
+        return Result()
+
+    monkeypatch.setattr("moira.edge_components.subprocess.run", run)
+    audio = FfmpegDshowCommandRecorder("Laptop Microphone").record(5)
+
+    assert audio.startswith(b"RIFF") and audio[8:12] == b"WAVE"
+    command, options = calls[0]
+    assert command[:6] == ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "dshow"]
+    assert "audio=Laptop Microphone" in command
+    assert command[-3:] == ["-f", "s16le", "pipe:1"]
+    assert options == {"check": True, "capture_output": True, "timeout": 8.0}
 
 
 def test_required_camera_verification_blocks_before_component_invocation():

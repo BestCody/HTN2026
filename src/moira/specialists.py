@@ -88,12 +88,17 @@ class AnalyticGraspPlanner:
             excluded = " ".join(request.excluded_regions).lower()
             top_score = 0.70 if "top" in excluded else 0.94
             side_score = 0.65 if "side" in excluded else 0.88
-            x, y, z = item.position_m
+            up_index = {"x": 0, "y": 1, "z": 2}[request.world.up_axis]
+            side_index = next(index for index in (2, 1, 0) if index != up_index)
+            top_position = list(item.position_m)
+            top_position[up_index] += height / 2
+            side_position = list(item.position_m)
+            side_position[side_index] -= width / 2
             poses = (
                 GraspPose(
                     f"{object_id}-top",
                     object_id,
-                    (x, y, z + height / 2),
+                    tuple(top_position),
                     (0.0, math.sqrt(0.5), 0.0, math.sqrt(0.5)),
                     width,
                     top_score * (1 - collision),
@@ -102,7 +107,7 @@ class AnalyticGraspPlanner:
                 GraspPose(
                     f"{object_id}-side",
                     object_id,
-                    (x, y - width / 2, z),
+                    tuple(side_position),
                     (0.0, 0.0, 0.0, 1.0),
                     width,
                     side_score * (1 - collision),
@@ -126,6 +131,18 @@ class SpecializedManipulationPolicy:
             raise TypeError("Manipulation policy expects PolicyInput")
         objects = {item.id: item for item in request.world.objects}
         grasps = {item.target_object_id: item.grasps[0] for item in request.grasps}
+        up_index = {"x": 0, "y": 1, "z": 2}[request.world.up_axis]
+
+        def height(item: object) -> float:
+            attributes = getattr(item, "attributes", None) or {}
+            value = attributes.get("height_m")
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise ValueError("Placement planning requires measured object height_m")
+            result = float(value)
+            if not math.isfinite(result) or result <= 0:
+                raise ValueError("Placement planning requires positive object height_m")
+            return result
+
         chunks = []
         for index, step in enumerate(request.candidate.steps):
             target = objects.get(step.target_object_id) if step.target_object_id else None
@@ -145,17 +162,15 @@ class SpecializedManipulationPolicy:
             )
             if raw_position is None:
                 raise ValueError(f"Offline policy fixture needs a target pose for {step.id}")
-            position = tuple(raw_position)
-            if grasp is not None and step.action.lower() in (
-                "grasp",
-                "lift",
-                "hold",
-                "place",
-                "handover",
-            ):
-                position = grasp.position_m
+            action = step.action.lower()
+            position = tuple(float(value) for value in raw_position)
+            if len(position) != 3 or not all(math.isfinite(value) for value in position):
+                raise ValueError(f"Offline policy fixture needs a finite 3D pose for {step.id}")
+            if grasp is not None:
                 orientation = grasp.orientation_xyzw
                 width = grasp.width_m
+                if action in ("approach", "grasp", "lift", "hold"):
+                    position = grasp.position_m
             else:
                 orientation = (0.0, 0.0, 0.0, 1.0)
                 width_value = parameters.get("gripper_width_m")
@@ -164,6 +179,39 @@ class SpecializedManipulationPolicy:
                         f"Offline policy fixture needs an explicit gripper width for {step.id}"
                     )
                 width = float(width_value)
+            clearance_value = parameters.get("clearance_m", 0.0)
+            if (
+                not isinstance(clearance_value, (int, float))
+                or isinstance(clearance_value, bool)
+                or not math.isfinite(clearance_value)
+                or clearance_value < 0
+            ):
+                raise ValueError(f"Offline policy fixture needs valid clearance for {step.id}")
+            clearance = float(clearance_value)
+            if action in ("transfer", "release", "place"):
+                destination_id = parameters.get("destination_object_id")
+                destination = (
+                    objects.get(destination_id) if isinstance(destination_id, str) else None
+                )
+                if destination is not None and target is not None and grasp is not None:
+                    # The cloud planner names the destination object's centre.
+                    # Convert it into a gripper pose that puts the manipulated
+                    # object on the destination support surface while preserving
+                    # the selected grasp offset.
+                    placement = list(destination.position_m)
+                    placement[up_index] += (height(destination) + height(target)) / 2
+                    grasp_offset = tuple(
+                        grasp.position_m[axis] - target.position_m[axis] for axis in range(3)
+                    )
+                    position = tuple(
+                        placement[axis] + grasp_offset[axis] for axis in range(3)
+                    )
+                    orientation = grasp.orientation_xyzw
+                    width = grasp.width_m
+            if action in ("approach", "lift", "transfer"):
+                raised = list(position)
+                raised[up_index] += clearance
+                position = tuple(raised)
             mass = (
                 target.estimated_mass_kg
                 if target is not None and target.estimated_mass_kg is not None
@@ -262,7 +310,9 @@ class PlanarBimanualIK:
             upper_arm_m=model.upper_arm_m,
             forearm_m=model.forearm_m,
             shoulder_height_m=model.shoulder_height_m,
-            shoulder_offset_m=model.shoulder_offset_m,
+            shoulder_offset_m=(
+                model.shoulder_offset_m if model.shoulder_offset_m is not None else 0.0
+            ),
             include_wrist_joint=False,
             joint_limits_rad=tuple(
                 (joint.lower_rad, joint.upper_rad) for joint in model.kinematic_joints
@@ -953,6 +1003,29 @@ class HardSafetyRiskModel:
 
 
 class TelemetryOutcomeVerifier:
+    def __init__(self, *, placement_tolerance_m: float = 0.05) -> None:
+        if (
+            not isinstance(placement_tolerance_m, (int, float))
+            or isinstance(placement_tolerance_m, bool)
+            or not math.isfinite(placement_tolerance_m)
+            or placement_tolerance_m <= 0
+        ):
+            raise ValueError("placement_tolerance_m must be finite and positive")
+        self.placement_tolerance_m = float(placement_tolerance_m)
+
+    @staticmethod
+    def _height(item: object) -> float | None:
+        attributes = getattr(item, "attributes", None) or {}
+        value = attributes.get("height_m")
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            return None
+        return float(value)
+
     def run(self, request: OutcomeInput) -> OutcomeReport:
         if not isinstance(request, OutcomeInput):
             raise TypeError("Outcome verifier expects OutcomeInput")
@@ -961,7 +1034,63 @@ class TelemetryOutcomeVerifier:
         status = "succeeded" if request.control.success else "failed"
         successful = sum(item.success for item in request.control.telemetry)
         total = len(request.control.telemetry)
-        confidence = 0.98 if request.control.success else min(0.99, 0.65 + 0.05 * total)
+        camera_verified = False
+        placement_error_m: float | None = None
+        verification_issue: str | None = None
+        if request.control.success:
+            if request.world_after is None:
+                status = "uncertain"
+                verification_issue = "post-action camera observation is missing"
+            else:
+                before = {item.id: item for item in request.world_before.objects}
+                after = {item.id: item for item in request.world_after.objects}
+                placement_step = next(
+                    (
+                        step
+                        for step in reversed(request.plan.candidate.steps)
+                        if step.action.casefold() in ("release", "place")
+                        and step.target_object_id is not None
+                        and isinstance((step.parameters or {}).get("destination_object_id"), str)
+                    ),
+                    None,
+                )
+                if placement_step is None:
+                    camera_verified = True
+                else:
+                    destination_id = str(placement_step.parameters["destination_object_id"])
+                    target_id = str(placement_step.target_object_id)
+                    target_after = after.get(target_id)
+                    destination_after = after.get(destination_id)
+                    target_before = before.get(target_id)
+                    if target_after is None or destination_after is None or target_before is None:
+                        status = "failed"
+                        verification_issue = "camera did not find the target and destination"
+                    else:
+                        target_height = self._height(target_before)
+                        destination_height = self._height(destination_after)
+                        if target_height is None or destination_height is None:
+                            status = "uncertain"
+                            verification_issue = "camera placement check lacks object dimensions"
+                        else:
+                            up_index = {"x": 0, "y": 1, "z": 2}[request.world_after.up_axis]
+                            expected = list(destination_after.position_m)
+                            expected[up_index] += (target_height + destination_height) / 2
+                            placement_error_m = math.dist(target_after.position_m, expected)
+                            camera_verified = placement_error_m <= self.placement_tolerance_m
+                            if not camera_verified:
+                                status = "failed"
+                                verification_issue = (
+                                    "camera placement error exceeds configured tolerance"
+                                )
+        confidence = (
+            0.98
+            if status == "succeeded" and camera_verified
+            else 0.9
+            if status == "succeeded"
+            else 0.5
+            if status == "uncertain"
+            else min(0.99, 0.65 + 0.05 * total)
+        )
         return OutcomeReport(
             request.plan.candidate.id,
             status,
@@ -986,7 +1115,10 @@ class TelemetryOutcomeVerifier:
                     ),
                     default=0.0,
                 ),
-                "camera_verified": request.world_after is not None,
+                "camera_verified": camera_verified,
+                "placement_error_m": placement_error_m,
+                "placement_tolerance_m": self.placement_tolerance_m,
+                "verification_issue": verification_issue,
                 "objects_before": len(request.world_before.objects),
                 "objects_after": (
                     len(request.world_after.objects) if request.world_after is not None else None

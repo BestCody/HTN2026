@@ -11,7 +11,13 @@ from moira.simulation_training import (
 )
 
 MODEL = Path("robot_models/four_dof_desktop_arm/model.json")
+PHYSICAL_MODEL = Path(
+    "robot_models/four_dof_desktop_arm/physical_three_actuator_model.json"
+)
 MUJOCO = Path("robot_models/four_dof_desktop_arm/kinematic_validation.xml")
+PHYSICAL_MUJOCO = Path(
+    "robot_models/four_dof_desktop_arm/physical_three_actuator_validation.xml"
+)
 
 
 def _model():
@@ -75,17 +81,29 @@ def test_complete_simulation_config_validates_and_stale_geometry_is_rejected():
 def test_preflight_reports_incomplete_calibration_and_physics(tmp_path):
     simulation = tmp_path / "simulation.json"
     simulation.write_text(
-        json.dumps(create_simulation_training_template(_model(), MUJOCO)),
+        Path("config/simulation_training.json").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    camera = tmp_path / "incomplete-camera.json"
+    camera_value = json.loads(
+        Path("config/co6_camera_calibration.json").read_text(encoding="utf-8")
+    )
+    camera_value.update(
+        captured_at=None,
+        camera_matrix=None,
+        distortion_coefficients=None,
+        camera_to_base_matrix=None,
+    )
+    camera.write_text(json.dumps(camera_value), encoding="utf-8")
     report = simulation_training_preflight(
-        MODEL,
-        MUJOCO,
+        PHYSICAL_MODEL,
+        PHYSICAL_MUJOCO,
         Path("config/arm1_servo_calibration.json"),
-        Path("config/co6_camera_calibration.json"),
+        camera,
         simulation,
     )
     assert not report["ready"]
+    assert "CAD-derived kinematics validation" not in report["issues"]
     assert "complete servo calibration" in report["issues"]
     assert "complete camera calibration" in report["issues"]
     assert "complete simulation dynamics configuration" in report["issues"]

@@ -2689,7 +2689,7 @@ class PhysicalAI:
             details={
                 "status": outcome.status,
                 "confidence": outcome.confidence,
-                "camera_verified": world_after is not None,
+                "camera_verified": bool(outcome.observations.get("camera_verified", False)),
             },
         )
         failure = invoke(

@@ -1,5 +1,5 @@
 [Unit]
-Description=MoIRA locked Raspberry Pi robot controller
+Description=Charlie locked Raspberry Pi robot controller
 Wants=network-online.target
 After=network-online.target
 
@@ -7,9 +7,9 @@ After=network-online.target
 Type=simple
 User=client
 Group=client
-SupplementaryGroups=i2c gpio
+SupplementaryGroups=i2c gpio video
 WorkingDirectory=/home/client/moira-controller
-ExecStart=/home/client/moira-controller/.venv/bin/moira-pi-controller --host 0.0.0.0 --port 8770 --model /home/client/moira-controller/app/robot_models/four_dof_desktop_arm/model.json --env-file /home/client/moira-controller/robot-controller.env
+ExecStart=/home/client/moira-controller/.venv/bin/moira-pi-controller --host 0.0.0.0 --port 8770 --model /home/client/moira-controller/app/robot_models/four_dof_desktop_arm/physical_three_actuator_model.json --camera-device /dev/v4l/by-id/usb-GENERAL_GENERAL_WEBCAM-video-index0 --camera-id co6-usb --camera-width 640 --camera-height 480 --camera-fps 30 --env-file /home/client/moira-controller/robot-controller.env
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true

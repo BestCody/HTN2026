@@ -1,10 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/basetenlabs/truss/main/truss/config.schema.json
-description: Scene-grounded command understanding for MoIRA physical tasks.
-model_name: MoIRA Scene-Grounded Voice NLP
+description: Scene-grounded command understanding for Charlie physical tasks.
+model_name: Charlie Scene-Grounded Voice NLP
 python_version: py311
 model_metadata:
   model_id: /models/qwen2.5-3b-instruct
-  pretty_name: MoIRA Scene-Grounded Voice NLP
+  pretty_name: Charlie Scene-Grounded Voice NLP
   tags:
     - command-understanding
     - scene-grounding

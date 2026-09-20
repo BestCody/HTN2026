@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "robot_model": "../robot_models/four_dof_desktop_arm/physical_three_actuator_model.json",
+  "mujoco_model": "../robot_models/four_dof_desktop_arm/fixed_elbow_learning.xml",
+  "servo_observations": "arm1_servo_observations.json",
+  "dataset": "../outputs/simulation_learning/fixed_elbow_episodes.npz",
+  "metadata": "../outputs/simulation_learning/fixed_elbow_episodes.json",
+  "checkpoint_dir": "../checkpoints/simulation-learning",
+  "seed": 20260920,
+  "sample_count": 60000,
+  "split_fractions": {
+    "train": 0.8,
+    "validation": 0.1,
+    "test": 0.1
+  },
+  "command_to_joint": {
+    "base": {
+      "command_deg": [
+        0.0,
+        60.0,
+        123.0
+      ],
+      "joint_deg": [
+        0.0,
+        90.0,
+        180.0
+      ],
+      "basis": "user-observed front, left, and approximate back anchors"
+    },
+    "shoulder": {
+      "command_deg": [
+        0.0,
+        45.0,
+        90.0
+      ],
+      "joint_deg": [
+        90.0,
+        45.0,
+        0.0
+      ],
+      "basis": "endpoint-linear estimate from command 0 leaning back and command 90 all the way down"
+    },
+    "gripper": {
+      "command_deg": [
+        83.0,
+        180.0
+      ],
+      "simulation_joint_rad": [
+        0.46,
+        0.0
+      ],
+      "basis": "user-observed first contact and maximum open commands; pressure commands below 83 excluded"
+    }
+  },
+  "dynamics_randomization": {
+    "time_constant_s": [
+      0.05,
+      0.25
+    ],
+    "actuator_delay_s": [
+      0.0,
+      0.08
+    ],
+    "backlash_command_deg": [
+      0.0,
+      4.0
+    ],
+    "payload_kg": [
+      0.0,
+      0.025
+    ],
+    "payload_shoulder_slowdown": [
+      0.0,
+      0.6
+    ],
+    "horizon_s": [
+      2.0,
+      3.0
+    ],
+    "basis": "broad simulation-only randomization pending measured trajectories from the completed arm"
+  },
+  "training": {
+    "hidden_width": 128,
+    "hidden_layers": 3,
+    "batch_size": 1024,
+    "epochs": 80,
+    "learning_rate": 0.001,
+    "weight_decay": 1e-05,
+    "policy_max_command_mae_deg": 2.0,
+    "dynamics_max_command_mae_deg": 3.0,
+    "dynamics_max_position_mae_m": 0.01
+  }
+}

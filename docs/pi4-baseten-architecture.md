@@ -1,17 +1,18 @@
 # Raspberry Pi 4B and Baseten architecture
 
-The Raspberry Pi is the robot-side controller and owns the PCA9685 arm-control
-boundary. The RTX laptop captures the CO6 webcam, retains personal memory,
-enforces the component allow-list, runs orchestration and local GPU voice
-models, and calls the remote router and specialist models. The production path
+The Raspberry Pi captures the attached CO6 webcam and owns the PCA9685
+arm-control boundary. The RTX laptop retains personal memory, enforces the
+component allow-list, runs orchestration and local GPU voice models, and calls
+the remote router and specialist models. The production path
 has no automatic model fallback: a camera, router, network, schema, or inference
 failure is reported and physical execution does not begin.
 
 ```mermaid
 flowchart LR
-    MIC[Microphone] --> LAPTOP[RTX laptop MoIRA brain]
-    CAM[CO6 webcam] --> LAPTOP
-    LAPTOP -->|task text + compatible allow-list| ROUTER[Frozen MiniLM router Chain]
+    MIC[Microphone] --> LAPTOP[RTX laptop Charlie brain]
+    CAM[CO6 webcam] --> PI[Pi camera + robot service]
+    PI -->|authenticated JPEG| LAPTOP
+    LAPTOP -->|task text + compatible allow-list| ROUTER[Fine-tuned MiniLM router Chain]
     ROUTER -->|component ID only| LAPTOP
     LAPTOP --> STT[Local RTX Whisper]
     LAPTOP --> VNLP[Baseten scene-grounded voice NLP]
@@ -25,11 +26,11 @@ flowchart LR
     LAPTOP --> TTS[Local RTX Kokoro]
     LAPTOP --> MEM[(Laptop SQLite personal memory)]
     LAPTOP --> LOCAL[IK + trajectory + collision + hard safety]
-    LOCAL -->|authenticated bounded action chunks| PI[Pi robot controller]
+    LOCAL -->|authenticated bounded action chunks| PI
     PI --> CTRL[Local limit checks + watchdog]
     CTRL --> PCA[PCA9685 PWM controller]
-    PCA --> ARMS[Per arm: 2 MG996R + 2 SG90 actuators]
-    ARMS --> SENSORS[Encoders, current/load sensing, stop input]
+    PCA --> ARM[Current arm: base + shoulder + coupled gripper]
+    ARM --> SENSORS[Future feedback sensors + stop input]
     SENSORS --> PI
 ```
 
@@ -59,8 +60,8 @@ Official references:
 
 ## Request flow
 
-1. The laptop records bounded audio and CO6 JPEG frames with camera identity and
-   capture timestamps.
+1. The laptop records bounded audio and requests CO6 JPEG frames, camera
+   identity, and capture timestamps from the authenticated Pi endpoint.
 2. STT returns a transcript.
 3. Perception returns object IDs, labels, confidence, 3D positions, estimated
    masses, and hazards.
@@ -127,8 +128,9 @@ The compatible remote experts are described in
 [`examples/physical_ai_specialists.json`](../examples/physical_ai_specialists.json).
 Each declares one or more versioned interfaces, descriptions, and representative
 routing phrases. The router receives task text plus only the IDs allowed by the
-laptop registry, embeds the task and expert-owned prototypes with frozen
-MiniLM, and returns the ID with the highest prototype cosine similarity. The
+laptop registry, embeds the task and expert-owned prototypes with the accepted
+MiniLM checkpoint, and returns the ID with the highest normalized prototype-
+centroid cosine similarity. The
 laptop maps that ID to its configured endpoint and validates it again. It never
 accepts a URL or credential from the router.
 
@@ -197,34 +199,34 @@ session = build_physical_session(config, (camera,))
 The router remains a required Baseten Chain. No local LLM or automatic model
 fallback is selected if the router, specialist, or Pi robot endpoint fails.
 
-## Four-DOF desktop arm
+## Active fixed-elbow desktop arm
 
-The active SolidWorks assembly uses MG996R servos for base yaw and shoulder
-pitch, plus SG90 servos for elbow pitch and the end-effector mechanism. MoIRA
-emits three positioning angles and a separate aperture command. No payload
-rating or joint limit from the retired arm is carried into this profile.
+The SolidWorks assembly remains the geometry source. The physical elbow motor
+has failed mechanically closed and holds the link rigidly, so the active profile
+uses MG996R base yaw on channel 0, MG996R shoulder pitch on channel 1, and the
+SG90 gripper on channel 2. Channel 3 is unused and the failed elbow is disconnected. Charlie emits two positioning
+angles plus gripper aperture.
 
-The supplied 3MF establishes millimetre print geometry for 12 unique meshes,
-but its transforms are slicer plate placement rather than assembly poses. The
-SolidWorks/Fusion export now supplies five assembled link meshes, four analytic
-joint axes, a Y-up frame, and 154.14 mm/100.10 mm link spacing. The kinematic
-MuJoCo model compiles and passes per-joint hierarchy checks. The existing
-PCA9685 and 6 V/10 A supply are recorded. Arm #1 is installed with channels
-0–3 assigned in joint order; pulse endpoints and SG90 voltage compatibility
-remain unconfirmed. The future two-arm simulation fixture can continue to
-exercise coordination, but production bimanual control stays unavailable until
-both physical installations have independent calibration records.
+The Fusion export supplies five assembled link meshes, the original joint
+frames, a Y-up frame, and 154.14 mm/100.10 mm link spacing. The active MuJoCo
+model removes the elbow hinge and keeps the CAD assembly transform rigid. It
+compiles with four generalized coordinates: base, shoulder, and two coupled
+gripper fingers. Automated hierarchy checks, a 100-step finite-state run, and
+visual renders pass. The active model and report are
+`physical_three_actuator_validation.xml` and
+`physical_three_actuator_validation.json`.
 
-The robot is not yet motion-ready. Physical joint limits and velocities,
-actuator mapping, bimanual mount spacing, gripper aperture/force/speed, control
-frequency, clearance, payload testing, safety thresholds, controller timing,
-mass/inertia/friction, and physical calibration are still required before the
-local kinematics, trajectory, collision, safety, feedback, orchestration, and
-hardware components can be constructed from it. Their
-`from_robot_model(...)` factories enforce the same gate. `moira
-robot-model-check` reports every missing value. See the
-[arm audit](four-dof-desktop-arm-audit.md) for the recovered metadata and
-export procedure.
+The Arduino calibration used `Adafruit_PWMServoDriver` at 50 Hz with a global
+102-to-512 tick mapping. The recorded base, shoulder, and gripper command ranges
+are stored separately from physical joint angles in
+`config/arm1_servo_observations.json`. The future two-arm simulator can still
+exercise coordination, but physical bimanual control remains unavailable until
+arm #2 is built and independently calibrated.
+
+The robot remains motion-locked while physical velocity, gripper aperture and
+force, payload, collision clearance, power compatibility, camera workspace,
+and stop-path checks are incomplete. `moira robot-model-check` reports every
+remaining value rather than substituting measurements.
 
 ## Pi bring-up
 
@@ -239,7 +241,7 @@ python3 -m venv .venv
 ./.venv/bin/moira-pi-controller \
   --host 0.0.0.0 \
   --port 8770 \
-  --model robot_models/four_dof_desktop_arm/model.json
+  --model robot_models/four_dof_desktop_arm/physical_three_actuator_model.json
 ```
 
 This command is intentionally locked. It exposes health and emergency-stop
@@ -262,7 +264,10 @@ The checked-in unit deliberately omits `--enable-motion`. Calibration completion
 does not silently unlock the arm; enabling physical motion remains a separate,
 reviewable deployment change.
 
-The CO6 camera remains attached to the laptop and is never substituted by a Pi camera.
+The CO6 camera is attached to the Pi at the stable UVC path
+`/dev/v4l/by-id/usb-GENERAL_GENERAL_WEBCAM-video-index0`. The same locked Pi
+service exposes authenticated `/v1/camera`, `/v1/control`, and `/v1/stop`
+endpoints; enabling the camera does not enable motor motion.
 
 The voice design follows the same high-level path as the Hack the North 2025
 [DUM-E project](https://devpost.com/software/dum-e-kgx6at): speech, computer

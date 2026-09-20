@@ -1,4 +1,4 @@
-# MoIRA physical task planner
+# Charlie physical task planner
 
 This Baseten Chain accepts the same flattened fields emitted by
 `CandidatePlanningInput` and `PlanSelectionInput`. It generates several typed

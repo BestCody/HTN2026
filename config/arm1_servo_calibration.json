@@ -33,7 +33,7 @@
       "pulse_at_upper_us": null
     },
     "J3_GRIPPER": {
-      "channel": 3,
+      "channel": 2,
       "lower_deg": null,
       "upper_deg": null,
       "home_deg": null,

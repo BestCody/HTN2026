@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "checkerboard_inner_corners": [
+    8,
+    6
+  ],
+  "measured_square_size_m": 0.0254,
+  "measurement_note": "Current physical print measured at 1 inch per square."
+}

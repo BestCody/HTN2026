@@ -1,0 +1,28 @@
+{"instruction":"Use only one robotic arm to pick up the cube and place it at the goal.","expert_id":"baseten-waypoint-policy"}
+{"instruction":"A single manipulator should carry the small solid item between tabletop locations.","expert_id":"baseten-waypoint-policy"}
+{"instruction":"Generate ordinary one-arm reach, grasp, transport, and release waypoints.","expert_id":"baseten-waypoint-policy"}
+{"instruction":"Move the object with the left arm alone.","expert_id":"baseten-waypoint-policy"}
+{"instruction":"Command both arms to lift the long box together.","expert_id":"baseten-bimanual-act"}
+{"instruction":"Generate synchronized commands for the left and right grippers carrying one wide load.","expert_id":"baseten-bimanual-act"}
+{"instruction":"Use two manipulators to share the object's weight during transport.","expert_id":"baseten-bimanual-act"}
+{"instruction":"Create coupled arm actions that move a broad tray.","expert_id":"baseten-bimanual-act"}
+{"instruction":"Predict interaction forces between both arms without producing control commands.","expert_id":"baseten-bimanual-world"}
+{"instruction":"Simulate load sharing and interference for a proposed two-arm trajectory.","expert_id":"baseten-bimanual-world"}
+{"instruction":"Forecast synchronization error between the manipulators over the next few seconds.","expert_id":"baseten-bimanual-world"}
+{"instruction":"Evaluate the coupled physics of both arms after actions have already been proposed.","expert_id":"baseten-bimanual-world"}
+{"instruction":"Before planning, interpret the user's transcript against the currently visible objects.","expert_id":"baseten-voice-nlp"}
+{"instruction":"Resolve spoken object references and produce a grounded intent for future action.","expert_id":"baseten-voice-nlp"}
+{"instruction":"Extract what the user wants from their words and the current scene.","expert_id":"baseten-voice-nlp"}
+{"instruction":"Determine the requested action and destination before robot execution.","expert_id":"baseten-voice-nlp"}
+{"instruction":"After execution, compare the requested result with the new camera evidence.","expert_id":"baseten-outcome-verifier"}
+{"instruction":"Verify from before-and-after observations whether the completed motion achieved the goal.","expert_id":"baseten-outcome-verifier"}
+{"instruction":"Judge task success from the final image and robot telemetry.","expert_id":"baseten-outcome-verifier"}
+{"instruction":"Inspect the post-action scene to confirm the physical result.","expert_id":"baseten-outcome-verifier"}
+{"instruction":"Speak the robot's status sentence through the audio output.","expert_id":"baseten-tts"}
+{"instruction":"Synthesize a voice that reads this response to the user.","expert_id":"baseten-tts"}
+{"instruction":"Produce audible words from this written confirmation.","expert_id":"baseten-tts"}
+{"instruction":"Turn a clarification message into speech for the robot speaker.","expert_id":"baseten-tts"}
+{"instruction":"Listen to the incoming microphone audio and write down the words.","expert_id":"baseten-stt"}
+{"instruction":"Convert recorded human speech into a text transcript.","expert_id":"baseten-stt"}
+{"instruction":"Recognize the spoken input without generating any audio response.","expert_id":"baseten-stt"}
+{"instruction":"Decode this voice waveform into written language.","expert_id":"baseten-stt"}

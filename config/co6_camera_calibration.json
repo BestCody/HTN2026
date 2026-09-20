@@ -1,15 +1,98 @@
 {
   "schema_version": 1,
-  "robot_model_id": "four-dof-desktop-arm-v1",
+  "robot_model_id": "three-actuator-desktop-arm-v2",
   "robot_source_sha256": "bc5ad54ea950fa068b1c95d26e907497d43277aab97aa67eb58ef610bfd86df5",
   "camera_id": "co6-usb",
-  "captured_at": null,
-  "resolution_px": null,
-  "camera_matrix": null,
-  "distortion_coefficients": null,
-  "camera_to_base_matrix": null,
+  "captured_at": "2026-09-20T10:52:48.433510+00:00",
+  "resolution_px": [
+    640,
+    480
+  ],
+  "camera_matrix": [
+    [
+      836.4510334396834,
+      0.0,
+      385.0260644184089
+    ],
+    [
+      0.0,
+      817.3228175113017,
+      220.37937789603913
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "distortion_coefficients": [
+    -1.0226917539583662,
+    1.981450035278872,
+    -0.03468419058703021,
+    -0.11100720762089389,
+    -2.0402017678814044
+  ],
+  "camera_to_base_matrix": [
+    [
+      -0.35123552531174823,
+      0.46247360024059236,
+      -0.8140956791676793,
+      0.6236644707131265
+    ],
+    [
+      0.3578599386843327,
+      -0.7371669025352735,
+      -0.5731677085211592,
+      0.35223155924997657
+    ],
+    [
+      -0.8651993238808187,
+      -0.4926490910242863,
+      0.09341843002919005,
+      -0.1210877137454804
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
   "workspace": {
-    "table_height_m": null,
-    "bounds_base_frame_m": null
+    "table_height_m": 0.0,
+    "bounds_base_frame_m": {
+      "x": [
+        0.0,
+        0.17949090203557688
+      ],
+      "z": [
+        -0.17949090203557688,
+        0.17949090203557688
+      ]
+    }
+  },
+  "quality": {
+    "intrinsic_reprojection_rms_px": 0.5549042099127601,
+    "extrinsic_reprojection_rms_px": 1.3588987038258864,
+    "checkerboard_inner_corners": [
+      8,
+      6
+    ],
+    "checkerboard_square_size_m": 0.0254,
+    "base_center_px": [
+      370.0,
+      120.0
+    ],
+    "base_forward_px": [
+      328.0,
+      160.0
+    ],
+    "base_landmark_separation_on_reference_plane_m": 0.08913936244967241,
+    "alignment_method": "single_frame_planar_visual_landmarks",
+    "reference_plane_assumption": "checkerboard plane equals robot XZ ground plane",
+    "physical_alignment_validated": false,
+    "landmark_selection_method": "visual inference from circular ground footprint and midpoint of black-taped front face nearest checkerboard",
+    "estimated_base_origin_uncertainty_m": 0.0141,
+    "estimated_forward_yaw_uncertainty_deg": 2.93
   }
 }

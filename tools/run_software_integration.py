@@ -1,4 +1,4 @@
-"""Run the complete non-actuating MoIRA integration path."""
+"""Run the complete non-actuating Charlie integration path."""
 
 from __future__ import annotations
 

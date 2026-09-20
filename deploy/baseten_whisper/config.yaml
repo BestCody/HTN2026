@@ -1,10 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/basetenlabs/truss/main/truss/config.schema.json
-description: Low-latency English command transcription for the MoIRA physical-AI runtime.
-model_name: MoIRA Whisper Large V3 Turbo
+description: Low-latency English command transcription for the Charlie physical-AI runtime.
+model_name: Charlie Whisper Large V3 Turbo
 python_version: py311
 model_metadata:
   model_id: /models/faster-whisper-large-v3-turbo
-  pretty_name: MoIRA Whisper Large V3 Turbo
+  pretty_name: Charlie Whisper Large V3 Turbo
   tags:
     - speech-recognition
     - physical-ai

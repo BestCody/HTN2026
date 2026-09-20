@@ -4,12 +4,14 @@ Deploy with: truss chains push router.py --promote
 """
 
 import json
+import math
 from pathlib import Path
 
 import truss_chains as chains
 from pydantic import BaseModel, ConfigDict
 
-MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL_ID = "moira-specialist-router-minilm-l6-v2"
+MODEL_PATH = chains.make_abs_path_here("model")
 MODEL_CACHE = "/app/moira-router-models"
 CATALOG_PATH = Path(__file__).with_name("specialists.json")
 
@@ -45,13 +47,6 @@ class PhysicalComponentRouter(chains.ChainletBase):
         docker_image=chains.DockerImage(
             requirements_file=chains.make_abs_path_here("requirements.txt"),
         ),
-        build_commands=[
-            "mkdir -p /app/moira-router-models && "
-            "SENTENCE_TRANSFORMERS_HOME=/app/moira-router-models "
-            "python -c \"from sentence_transformers import SentenceTransformer; "
-            "SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', "
-            "cache_folder='/app/moira-router-models')\""
-        ],
         options=chains.ChainletOptions(
             env_variables={
                 "HF_HUB_OFFLINE": "1",
@@ -90,7 +85,7 @@ class PhysicalComponentRouter(chains.ChainletBase):
                 raise ValueError(f"Duplicate specialist ID: {expert_id}")
             self._prototypes[expert_id] = (description, *examples)
         self._encoder = SentenceTransformer(
-            MODEL_ID,
+            MODEL_PATH,
             device="cpu",
             cache_folder=MODEL_CACHE,
             local_files_only=True,
@@ -140,12 +135,29 @@ class PhysicalComponentRouter(chains.ChainletBase):
         start = 0
         for component in prototypes:
             stop = start + len(component)
-            scores.append(max(float(vector @ query) for vector in vectors[start:stop]))
+            component_vectors = vectors[start:stop]
+            dimensions = len(query)
+            if any(len(vector) != dimensions for vector in component_vectors):
+                raise ValueError("Specialist prototype embedding dimensions differ")
+            centroid = tuple(
+                math.fsum(float(vector[index]) for vector in component_vectors)
+                / len(component_vectors)
+                for index in range(dimensions)
+            )
+            norm = math.hypot(*centroid)
+            if norm == 0 or not math.isfinite(norm):
+                raise ValueError("Specialist prototype centroid has zero norm")
+            scores.append(
+                math.fsum(
+                    value * float(query[index]) / norm
+                    for index, value in enumerate(centroid)
+                )
+            )
             start = stop
         winner = max(range(len(scores)), key=scores.__getitem__)
         return RouterResponse(
             component_id=allowed_components[winner],
-            strategy="minilm_prototype_cosine",
+            strategy="minilm_prototype_centroid_cosine",
             model=MODEL_ID,
             scores=[
                 ComponentScore(component_id=component_id, score=score)

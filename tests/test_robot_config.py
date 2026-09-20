@@ -5,7 +5,14 @@ import pytest
 
 from moira.components import ComponentRegistry
 from moira.edge_components import LoadFeedbackComponent
-from moira.physical import BimanualControlComponent, PhysicalAI
+from moira.physical import (
+    ActionChunk,
+    BimanualControlComponent,
+    KinematicsInput,
+    PhysicalAI,
+    PolicyPlan,
+    WorldState,
+)
 from moira.robot_config import RobotModel, load_bundled_robot_model, load_robot_model
 from moira.robot_runtime import robot_bound_local_factories
 from moira.specialists import (
@@ -19,6 +26,9 @@ from moira.specialists import (
 from tools.merge_fusion_robot_export import merge
 
 MODEL_PATH = Path("robot_models/four_dof_desktop_arm/model.json")
+PHYSICAL_MODEL_PATH = Path(
+    "robot_models/four_dof_desktop_arm/physical_three_actuator_model.json"
+)
 
 
 def _motion_ready_mapping() -> dict[str, object]:
@@ -93,6 +103,52 @@ def _motion_ready_mapping() -> dict[str, object]:
     return value
 
 
+def _fixed_link_motion_ready_mapping() -> dict[str, object]:
+    value = json.loads(PHYSICAL_MODEL_PATH.read_text(encoding="utf-8"))
+    value["payload_limit_kg"] = 0.025
+    value["kinematics"]["fixed_link_reach_tolerance_m"] = 0.01
+    value["control_limits"] = {
+        "trajectory_frequency_hz": 10.0,
+        "required_clearance_m": 0.01,
+        "max_gripper_width_m": 0.05,
+        "max_gripper_velocity_m_s": 0.02,
+        "max_gripper_force_n": 2.0,
+        "controller_timeout_margin_s": 0.5,
+    }
+    value["safety_limits"] = {
+        "max_slip_probability": 0.30,
+        "max_collision_probability": 0.15,
+        "min_grasp_stability_score": 0.70,
+    }
+    for joint in value["joints"]:
+        joint.update(
+            lower_deg=-90.0,
+            upper_deg=90.0,
+            home_deg=0.0,
+            max_velocity_deg_s=30.0,
+        )
+    controller = value["servo_controller"]
+    controller.update(
+        i2c_address=0x40,
+        reference_clock_hz=25_000_000.0,
+        pwm_frequency_hz=50.0,
+        servo_power_validated=True,
+        output_enable_validated=True,
+    )
+    for calibration in controller["actuators"]["left"].values():
+        calibration.update(pulse_at_lower_us=1000.0, pulse_at_upper_us=2000.0)
+    for flag in (
+        "calibration_complete",
+        "kinematics_validated",
+        "collision_geometry_validated",
+        "actuator_mapping_validated",
+        "payload_validated",
+    ):
+        value[flag] = True
+    value["blockers"] = []
+    return value
+
+
 def test_bundled_robot_config_matches_canonical_robot_config():
     assert load_bundled_robot_model() == load_robot_model(MODEL_PATH)
 
@@ -114,13 +170,14 @@ def test_robot_config_rejects_malformed_structural_metadata(field, value, messag
 
 
 def test_active_robot_profile_matches_new_sources_and_blocks_motion():
-    model = load_robot_model(MODEL_PATH, verify_source=True)
-    assert model.model_id == "four-dof-desktop-arm-v1"
+    model = load_robot_model(PHYSICAL_MODEL_PATH, verify_source=True)
+    assert model.model_id == "three-actuator-desktop-arm-v2"
+    assert model.kinematic_layout == "yaw_shoulder_fixed_link"
+    assert model.effective_reach_m == pytest.approx(0.179490902036)
     assert model.servo_models == {
         "J1_BASE_YAW": "MG996R",
         "J2_SHOULDER": "MG996R",
-        "J3_ELBOW": "SG90",
-        "J4_END_EFFECTOR": "SG90",
+        "J3_GRIPPER": "SG90",
     }
     assert model.payload_limit_kg is None
     assert model.servo_controller.servo_supply_voltage == 6.0
@@ -132,8 +189,7 @@ def test_active_robot_profile_matches_new_sources_and_blocks_motion():
     } == {
         "J1_BASE_YAW": 0,
         "J2_SHOULDER": 1,
-        "J3_ELBOW": 2,
-        "J4_END_EFFECTOR": 3,
+        "J3_GRIPPER": 2,
     }
     assert all(
         calibration.channel is None
@@ -142,14 +198,14 @@ def test_active_robot_profile_matches_new_sources_and_blocks_motion():
     assert [joint.name for joint in model.kinematic_joints] == [
         "J1_BASE_YAW",
         "J2_SHOULDER",
-        "J3_ELBOW",
     ]
-    assert model.gripper_joint.name == "J4_END_EFFECTOR"
+    assert model.gripper_joint.name == "J3_GRIPPER"
     assert not model.motion_ready
     assert "validated payload limit" in model.readiness_issues
     assert "joint axes" not in model.readiness_issues
     assert "joint limits and home positions" in model.readiness_issues
     assert "PCA9685 channel and pulse endpoint mapping" in model.readiness_issues
+    assert "fixed-link reach tolerance" in model.readiness_issues
     with pytest.raises(RuntimeError, match="not motion-ready"):
         model.require_motion_ready()
 
@@ -201,6 +257,53 @@ def test_motion_components_use_calibrated_robot_profile():
     }
     assert system.robot_model_id == model.model_id
     assert system.gripper_geometry["max_width_m"] == 0.08
+
+
+def test_fixed_link_robot_uses_two_axis_ik_and_rejects_off_arc_targets():
+    model = RobotModel.from_mapping(_fixed_link_motion_ready_mapping())
+    assert model.motion_ready
+    solver = PlanarBimanualIK.from_robot_model(model)
+    reach = model.effective_reach_m
+    height = model.shoulder_height_m
+    on_arc = ActionChunk(
+        "on-arc",
+        "step-1",
+        "waypoint",
+        ("left",),
+        1.0,
+        "block",
+        (reach, height, 0.0, 0.0, 0.0, 0.0, 1.0),
+        0.02,
+        1.0,
+    )
+    result = solver.run(
+        KinematicsInput(
+            PolicyPlan("plan", "waypoint", (on_arc,)),
+            WorldState((), {}, up_axis="y"),
+        )
+    )
+    assert result.feasible
+    assert result.joint_targets["on-arc"]["left"] == pytest.approx((0.0, 0.0))
+
+    off_arc = ActionChunk(
+        "off-arc",
+        "step-1",
+        "waypoint",
+        ("left",),
+        1.0,
+        "block",
+        (reach / 2, height, 0.0, 0.0, 0.0, 0.0, 1.0),
+        0.02,
+        1.0,
+    )
+    rejected = solver.run(
+        KinematicsInput(
+            PolicyPlan("plan", "waypoint", (off_arc,)),
+            WorldState((), {}, up_axis="y"),
+        )
+    )
+    assert not rejected.feasible
+    assert "fixed-link arc" in rejected.reasons[0]
 
 
 def test_single_installed_arm_does_not_require_bimanual_mount_geometry():

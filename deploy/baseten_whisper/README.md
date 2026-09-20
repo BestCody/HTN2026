@@ -1,4 +1,4 @@
-# MoIRA Whisper Large V3 Turbo
+# Charlie Whisper Large V3 Turbo
 
 This Truss deploys the voice transcription specialist on one Baseten
 `L4:4x16` instance. It accepts the exact JSON representation produced by

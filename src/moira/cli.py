@@ -17,6 +17,7 @@ from .backends import (
     TransformersGenerator,
 )
 from .baseten_status import inspect_baseten_deployments
+from .brand import DISPLAY_NAME
 from .calibration import (
     apply_servo_calibration_file,
     write_json_atomic,
@@ -139,7 +140,9 @@ def _camera_device(value: str) -> int | str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="MoIRA modular robot policy routing")
+    parser = argparse.ArgumentParser(
+        description=f"{DISPLAY_NAME} modular physical-AI model routing"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("demo", help="Offline toy pipeline; does not use pretrained routing models")
     commands.add_parser(
@@ -238,7 +241,7 @@ def main(argv: list[str] | None = None) -> int:
     physical_run.add_argument("--camera", help="USB camera index or device path")
     physical_run.add_argument(
         "--camera-url",
-        help="Authenticated laptop camera endpoint, for example http://HOST:8765/v1/camera",
+        help="Authenticated LAN camera endpoint, for example http://PI:8770/v1/camera",
     )
     physical_run.add_argument("--camera-id")
     physical_run.add_argument("--audio-device", help="Optional ALSA capture device name")
@@ -482,6 +485,7 @@ def main(argv: list[str] | None = None) -> int:
                     camera_url,
                     token=token,
                     camera_id=camera_id,
+                    rotation_degrees=config.camera.rotation_degrees,
                 )
             else:
                 if config.camera.transport == "lan_http":
@@ -498,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
                 camera = OpenCVCameraSource(
                     _camera_device(camera_device),
                     camera_id=camera_id,
+                    rotation_degrees=config.camera.rotation_degrees,
                 )
             with build_physical_session(config, (camera,)) as session:
                 if args.execute:

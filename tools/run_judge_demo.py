@@ -1,4 +1,4 @@
-"""Run MoIRA's real non-actuating pipeline with a live judge-facing trace."""
+"""Run Charlie's real non-actuating pipeline with a live judge-facing trace."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from moira.brand import DISPLAY_NAME  # noqa: E402
 from moira.judge_demo import JudgeDemoTrace  # noqa: E402
 from moira.software_integration import (  # noqa: E402
     load_software_integration_config,
@@ -39,7 +40,9 @@ def _play_audio(path: Path) -> None:
 def main() -> int:
     _configure_utf8_output()
     parser = argparse.ArgumentParser(
-        description="Show live MoIRA model routing and prediction decisions in the terminal."
+        description=(
+            f"Show live {DISPLAY_NAME} model routing and prediction decisions in the terminal."
+        )
     )
     parser.add_argument(
         "--config",

@@ -9,17 +9,18 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
-CHAIN = (
-    ("fixed_base", None, None),
-    ("turntable", "fixed_base", "J1_BASE_YAW"),
-    ("upper_arm", "turntable", "J2_SHOULDER"),
-    ("forearm", "upper_arm", "J3_ELBOW"),
-)
-LOGICAL_JOINTS = {
+LEGACY_LAYOUT = "yaw_shoulder_elbow"
+FIXED_ELBOW_LAYOUT = "yaw_shoulder_fixed_link"
+LEGACY_JOINTS = {
     "J1_BASE_YAW",
     "J2_SHOULDER",
     "J3_ELBOW",
     "J4_END_EFFECTOR",
+}
+FIXED_ELBOW_JOINTS = {
+    "J1_BASE_YAW",
+    "J2_SHOULDER",
+    "J3_GRIPPER",
 }
 CANONICAL_MESHES = {"fixed_base", "turntable", "upper_arm", "forearm", "end_effector"}
 MECHANISM_MESHES = {"fixed", "primary", "mirror"}
@@ -38,7 +39,21 @@ def _values(value: tuple[float, ...]) -> str:
     return " ".join(f"{item:.12g}" for item in value)
 
 
-def _joint_by_name(model: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _layout(model: dict[str, Any]) -> str:
+    raw = model.get("kinematics", {})
+    if raw is None:
+        return LEGACY_LAYOUT
+    if not isinstance(raw, dict):
+        raise ValueError("Robot model kinematics must be an object")
+    layout = str(raw.get("layout", LEGACY_LAYOUT))
+    if layout not in {LEGACY_LAYOUT, FIXED_ELBOW_LAYOUT}:
+        raise ValueError(f"Unsupported kinematic layout: {layout}")
+    return layout
+
+
+def _joint_by_name(
+    model: dict[str, Any], expected: set[str]
+) -> dict[str, dict[str, Any]]:
     joints = model.get("joints")
     if not isinstance(joints, list):
         raise ValueError("Robot model does not contain joints")
@@ -47,9 +62,25 @@ def _joint_by_name(model: dict[str, Any]) -> dict[str, dict[str, Any]]:
         for item in joints
         if isinstance(item, dict) and item.get("name")
     }
-    if set(result) != LOGICAL_JOINTS:
-        raise ValueError("Robot model joints do not match the four-DOF topology")
+    if set(result) != expected:
+        raise ValueError(
+            f"Robot model joints do not match the {model.get('model_id')} topology"
+        )
     return result
+
+
+def _fixed_elbow(model: dict[str, Any]) -> dict[str, Any]:
+    kinematics = model.get("kinematics")
+    if not isinstance(kinematics, dict):
+        raise ValueError("Fixed-link model is missing kinematics")
+    elbow = kinematics.get("fixed_elbow")
+    if not isinstance(elbow, dict) or elbow.get("rigid") is not True:
+        raise ValueError("Fixed-link model must declare a rigid fixed_elbow")
+    if float(elbow.get("reference_angle_deg", math.nan)) != 0.0:
+        raise ValueError(
+            "MuJoCo export currently requires the fixed elbow at the CAD zero pose"
+        )
+    return elbow
 
 
 def _mesh_path(model_path: Path, relative: object, label: str) -> Path:
@@ -80,6 +111,7 @@ def _joint_attributes(name: str, joint: dict[str, Any]) -> dict[str, str]:
 
 def generate(model_path: Path, output_path: Path) -> ET.ElementTree:
     model = json.loads(model_path.read_text(encoding="utf-8"))
+    layout = _layout(model)
     meshes = model.get("meshes")
     if not isinstance(meshes, dict) or set(meshes) != CANONICAL_MESHES:
         raise ValueError("Robot model must contain all five merged link meshes")
@@ -92,20 +124,31 @@ def generate(model_path: Path, output_path: Path) -> ET.ElementTree:
     coordinate_frame = model.get("coordinate_frame")
     if coordinate_frame != {"ground_plane": "XZ", "up_axis": "Y"}:
         raise ValueError("MuJoCo generator currently requires the exported XZ/Y-up frame")
-    joints = _joint_by_name(model)
+    expected_joints = (
+        LEGACY_JOINTS if layout == LEGACY_LAYOUT else FIXED_ELBOW_JOINTS
+    )
+    joints = _joint_by_name(model, expected_joints)
     primary_name = str(mechanism.get("primary_joint"))
     mirror_name = str(mechanism.get("mirror_joint"))
-    if primary_name != "J4_END_EFFECTOR" or not mirror_name:
+    expected_primary = (
+        "J4_END_EFFECTOR" if layout == LEGACY_LAYOUT else "J3_GRIPPER"
+    )
+    if primary_name != expected_primary or not mirror_name:
         raise ValueError("Gripper mechanism joint names do not match the robot topology")
     gear_ratio = float(mechanism.get("gear_ratio", 0))
     if not math.isfinite(gear_ratio) or gear_ratio == 0:
         raise ValueError("Gripper gear ratio must be finite and nonzero")
 
     root = ET.Element("mujoco", {"model": str(model.get("model_id", "moira-robot"))})
+    topology_note = (
+        "The physical elbow is rigid at the exported CAD assembly pose. "
+        if layout == FIXED_ELBOW_LAYOUT
+        else ""
+    )
     root.append(
         ET.Comment(
             "Kinematic validation only: zero gravity, no actuators, and no invented "
-            "joint limits or dynamics."
+            f"joint limits or dynamics. {topology_note}"
         )
     )
     ET.SubElement(
@@ -145,18 +188,38 @@ def generate(model_path: Path, output_path: Path) -> ET.ElementTree:
     world_origins: dict[str, tuple[float, float, float]] = {
         "fixed_base": (0.0, 0.0, 0.0)
     }
-    for component, parent, joint_name in CHAIN:
+    fixed_elbow = _fixed_elbow(model) if layout == FIXED_ELBOW_LAYOUT else None
+    chain = (
+        ("fixed_base", None, None, None),
+        ("turntable", "fixed_base", "J1_BASE_YAW", None),
+        ("upper_arm", "turntable", "J2_SHOULDER", None),
+        (
+            "forearm",
+            "upper_arm",
+            "J3_ELBOW" if layout == LEGACY_LAYOUT else None,
+            fixed_elbow,
+        ),
+    )
+    for component, parent, joint_name, fixed_joint in chain:
         if parent is None:
             body = ET.SubElement(worldbody, "body", {"name": component})
         else:
-            joint = joints[str(joint_name)]
-            world_origin = _vector(joint.get("origin_m"), f"{joint_name} origin")
+            frame = joints[str(joint_name)] if joint_name else fixed_joint
+            if not isinstance(frame, dict):
+                raise ValueError(f"Missing transform for {component}")
+            frame_name = str(joint_name or "fixed elbow")
+            world_origin = _vector(frame.get("origin_m"), f"{frame_name} origin")
             parent_origin = world_origins[parent]
             relative = tuple(world_origin[index] - parent_origin[index] for index in range(3))
             body = ET.SubElement(
                 bodies[parent], "body", {"name": component, "pos": _values(relative)}
             )
-            ET.SubElement(body, "joint", _joint_attributes(str(joint_name), joint))
+            if joint_name:
+                ET.SubElement(
+                    body,
+                    "joint",
+                    _joint_attributes(str(joint_name), joints[str(joint_name)]),
+                )
             world_origins[component] = world_origin
         ET.SubElement(
             body,
@@ -235,7 +298,11 @@ def generate(model_path: Path, output_path: Path) -> ET.ElementTree:
         equality,
         "joint",
         {
-            "name": "J4_GEAR_COUPLING",
+            "name": (
+                "J4_GEAR_COUPLING"
+                if layout == LEGACY_LAYOUT
+                else "J3_GRIPPER_GEAR_COUPLING"
+            ),
             "joint1": primary_name,
             "joint2": mirror_name,
             "polycoef": _values((0.0, gear_ratio, 0.0, 0.0, 0.0)),

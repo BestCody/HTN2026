@@ -174,7 +174,7 @@ def run(context: Any) -> None:  # Fusion calls this entry point.
             raise RuntimeError("Import Sharma_Ishaan_robotAssem.SLDASM before running this script")
 
         dialog = ui.createFolderDialog()
-        dialog.title = "Choose the MoIRA robot-model export directory"
+        dialog.title = "Choose the Charlie robot-model export directory"
         if dialog.showDialog() != adsk.core.DialogResults.DialogOK:
             return
         destination = Path(dialog.folder) / "four_dof_desktop_arm_export"

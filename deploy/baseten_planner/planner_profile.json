@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "robot_model_id": "four-dof-desktop-arm-v1",
+  "robot_model_id": "three-actuator-desktop-arm-v2",
   "robot_source_sha256": "bc5ad54ea950fa068b1c95d26e907497d43277aab97aa67eb58ef610bfd86df5",
   "installed_arms": ["left"],
   "future_arms": ["right"],

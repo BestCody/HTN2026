@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hmac
 import json
 import math
@@ -19,6 +20,8 @@ from uuid import uuid4
 from dotenv import load_dotenv
 
 from .cloud import JsonHttpClient
+from .brand import DISPLAY_NAME
+from .edge_components import V4L2JpegSource
 from .physical import (
     ActionChunk,
     ArmTelemetry,
@@ -388,13 +391,20 @@ class PiRobotControlComponent:
 
 
 class PiRobotControllerApplication:
-    """Pi-side command gate; starts without touching I2C until execution is enabled."""
+    """Pi-side camera and command gate; motion remains independently locked."""
 
-    def __init__(self, model: RobotModel, *, enable_motion: bool = False) -> None:
+    def __init__(
+        self,
+        model: RobotModel,
+        *,
+        enable_motion: bool = False,
+        camera: Any | None = None,
+    ) -> None:
         if not isinstance(enable_motion, bool):
             raise TypeError("enable_motion must be boolean")
         self.model = model
         self.enable_motion = enable_motion
+        self.camera = camera
         self._controller = (
             LazyPCA9685Control(model) if enable_motion and model.motion_ready else None
         )
@@ -413,7 +423,20 @@ class PiRobotControllerApplication:
             "installed_arms": list(self.model.servo_controller.installed_arms),
             "i2c_address": self.model.servo_controller.i2c_address,
             "pwm_frequency_hz": self.model.servo_controller.pwm_frequency_hz,
+            "camera_enabled": self.camera is not None,
+            "camera_id": getattr(self.camera, "camera_id", None),
             "readiness_issues": list(self.model.readiness_issues),
+        }
+
+    def capture(self) -> dict[str, Any]:
+        if self.camera is None:
+            raise RuntimeError("Pi camera is not enabled")
+        frame = self.camera.capture()
+        return {
+            "camera_id": frame.camera_id,
+            "captured_at": frame.captured_at,
+            "media_type": frame.media_type,
+            "data_base64": base64.b64encode(frame.data).decode("ascii"),
         }
 
     def control(self, value: Any) -> dict[str, Any]:
@@ -450,6 +473,9 @@ class PiRobotControllerApplication:
     def close(self) -> None:
         if self._controller is not None:
             self._controller.close()
+        close = getattr(self.camera, "close", None)
+        if callable(close):
+            close()
 
 
 def pi_robot_handler_type(
@@ -480,10 +506,27 @@ def pi_robot_handler_type(
             return json.loads(self.rfile.read(length))
 
         def do_GET(self) -> None:  # noqa: N802
-            if self.path != "/health":
+            if self.path == "/health":
+                self._json(HTTPStatus.OK, application.health())
+                return
+            if self.path != "/v1/camera":
                 self._json(HTTPStatus.NOT_FOUND, {"error": "unknown endpoint"})
                 return
-            self._json(HTTPStatus.OK, application.health())
+            if not self._authorized():
+                self._json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
+                return
+            try:
+                response = application.capture()
+            except RuntimeError as exc:
+                self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(exc)})
+                return
+            except Exception as exc:
+                self._json(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    {"error": type(exc).__name__, "message": str(exc)},
+                )
+                return
+            self._json(HTTPStatus.OK, response)
 
         def do_POST(self) -> None:  # noqa: N802
             if not self._authorized():
@@ -534,6 +577,11 @@ def controller_main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8770)
     parser.add_argument("--model", type=Path, required=True)
+    parser.add_argument("--camera-device")
+    parser.add_argument("--camera-id", default="co6-usb")
+    parser.add_argument("--camera-width", type=int, default=640)
+    parser.add_argument("--camera-height", type=int, default=480)
+    parser.add_argument("--camera-fps", type=int, default=30)
     parser.add_argument(
         "--enable-motion",
         action="store_true",
@@ -550,11 +598,25 @@ def controller_main(argv: list[str] | None = None) -> int:
     from .robot_config import load_robot_model
 
     model = load_robot_model(args.model, verify_source=True)
-    application = PiRobotControllerApplication(model, enable_motion=args.enable_motion)
+    camera = None
+    if args.camera_device:
+        camera = V4L2JpegSource(
+            args.camera_device,
+            camera_id=args.camera_id,
+            width=args.camera_width,
+            height=args.camera_height,
+            fps=args.camera_fps,
+        )
+    application = PiRobotControllerApplication(
+        model,
+        enable_motion=args.enable_motion,
+        camera=camera,
+    )
     server = ThreadingHTTPServer((args.host, args.port), pi_robot_handler_type(application, token))
     print(
-        f"MoIRA Pi robot service listening on http://{args.host}:{args.port}; "
-        f"motion_enabled={application.enable_motion}; motion_ready={model.motion_ready}"
+        f"{DISPLAY_NAME} Pi robot service listening on http://{args.host}:{args.port}; "
+        f"motion_enabled={application.enable_motion}; motion_ready={model.motion_ready}; "
+        f"camera_enabled={camera is not None}"
     )
     try:
         server.serve_forever()

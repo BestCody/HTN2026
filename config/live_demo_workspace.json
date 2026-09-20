@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "coordinate_frame": "robot_base",
+  "up_axis": "y",
+  "table_height_m": 0.08217658009775211,
+  "support_surface": {
+    "required": true,
+    "height_above_robot_base_plane_m": 0.08217658009775211,
+    "derivation": "CAD-derived support height for the live tabletop demonstration"
+  },
+  "minimum_clearance_m": 0.02,
+  "people_present": false,
+  "human_error_policy": {
+    "max_pre_execution_target_drift_m": 0.02,
+    "monitor_scene_between_steps": true
+  },
+  "perception": {
+    "labels": ["pencil", "marker", "cup", "box", "tray", "bottle"],
+    "confidence_threshold": 0.32,
+    "hazard_labels": [],
+    "object_dimensions_m": {
+      "pencil": [0.16, 0.01, 0.01],
+      "marker": [0.14, 0.02, 0.02],
+      "cup": [0.08, 0.10, 0.08],
+      "box": [0.04, 0.04, 0.04],
+      "tray": [0.16, 0.02, 0.12],
+      "bottle": [0.06, 0.16, 0.06]
+    },
+    "object_masses_kg": {
+      "pencil": 0.008,
+      "marker": 0.015,
+      "cup": 0.02,
+      "box": 0.02,
+      "tray": 0.04,
+      "bottle": 0.025
+    }
+  }
+}

@@ -20,6 +20,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from moira.brand import DISPLAY_NAME  # noqa: E402
 from moira.edge_components import OpenCVCameraSource  # noqa: E402
 from moira.rtx_voice import FasterWhisperRTX, KokoroRTX  # noqa: E402
 
@@ -166,7 +167,7 @@ def main() -> int:
         camera_id=args.camera_id,
     )
     server = ThreadingHTTPServer((args.host, args.port), handler_type(application, token))
-    print(f"MoIRA RTX voice service listening on http://{args.host}:{args.port}")
+    print(f"{DISPLAY_NAME} RTX voice service listening on http://{args.host}:{args.port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

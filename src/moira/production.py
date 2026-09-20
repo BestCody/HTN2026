@@ -6,7 +6,7 @@ import importlib.util
 import json
 import math
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
@@ -22,24 +22,42 @@ from .cloud import (
     RemoteComponentRouter,
     load_runtime_environment,
 )
+from .brand import DEFAULT_WAKE_WORD, DISPLAY_NAME
 from .components import ComponentDecision, ComponentRegistry, Layer, ModelComponent
 from .contracts import decode_physical_response
 from .edge_components import LoadFeedbackComponent, SQLitePersonalMemory
 from .episode_dataset import validate_camera_calibration
+from .learned_specialists import (
+    AcceptedSimulationModels,
+    LearnedForwardDynamics,
+    LearnedWaypointKinematics,
+)
 from .model_api_components import ModelAPIScenePerception, ModelAPIVoiceGrounder
 from .pca9685 import PCA9685PulseDevice, pca9685_installed_arm_drivers
-from .physical import BimanualControlComponent, ControlInput, ControlReport, PhysicalAI
+from .physical import (
+    BimanualControlComponent,
+    ControlInput,
+    ControlReport,
+    PhysicalAI,
+    PipelineEvent,
+)
 from .pi import PiRuntimeProfile
 from .robot_config import RobotModel, load_robot_model
 from .session import JsonlRunJournal, PhysicalSession
+from .simulation_learning import load_simulation_learning_config
 from .specialists import (
+    AnalyticGraspPlanner,
     BoundedTrajectoryPlanner,
     ConservativeCollisionChecker,
     HardSafetyRiskModel,
+    ModelBasedTaskReward,
     PlanarBimanualIK,
+    SpecializedManipulationPolicy,
+    StateSpaceWorldModel,
     TactileSignalModel,
     TelemetryFailureClassifier,
     TelemetryLoadEstimator,
+    TelemetryOutcomeVerifier,
     WorldModelErrorTracker,
 )
 
@@ -123,12 +141,15 @@ class CameraRuntimeConfig:
     device_env: str | None = None
     url_env: str | None = None
     token_env: str | None = None
+    rotation_degrees: Literal[0, 90, 180, 270] = 0
 
     def __post_init__(self) -> None:
         if self.transport not in ("opencv", "lan_http"):
             raise ValueError("unsupported camera transport")
         if not isinstance(self.camera_id, str) or not self.camera_id.strip():
             raise ValueError("camera_id must be a non-empty string")
+        if self.rotation_degrees not in (0, 90, 180, 270):
+            raise ValueError("camera rotation_degrees must be 0, 90, 180, or 270")
         if self.transport == "lan_http":
             if (
                 not isinstance(self.url_env, str)
@@ -169,6 +190,93 @@ class ControllerRuntimeConfig:
 
 
 @dataclass(frozen=True)
+class AudioRuntimeConfig:
+    transport: Literal["ffmpeg_dshow"]
+    device_env: str
+    sample_rate_hz: int = 16_000
+    channels: int = 1
+    command_duration_seconds: int = 5
+    wake_word: str = DEFAULT_WAKE_WORD
+    wake_window_seconds: int = 4
+
+    def __post_init__(self) -> None:
+        if self.transport != "ffmpeg_dshow":
+            raise ValueError("unsupported laptop audio transport")
+        if not isinstance(self.device_env, str) or not self.device_env.strip():
+            raise ValueError("laptop audio transport needs device_env")
+        if (
+            not isinstance(self.sample_rate_hz, int)
+            or isinstance(self.sample_rate_hz, bool)
+            or not 8_000 <= self.sample_rate_hz <= 48_000
+        ):
+            raise ValueError("laptop audio sample rate must be in [8000, 48000]")
+        if self.channels not in (1, 2):
+            raise ValueError("laptop audio channels must be 1 or 2")
+        if (
+            not isinstance(self.command_duration_seconds, int)
+            or isinstance(self.command_duration_seconds, bool)
+            or not 1 <= self.command_duration_seconds <= 30
+        ):
+            raise ValueError("laptop command duration must be in [1, 30] seconds")
+        if (
+            not isinstance(self.wake_word, str)
+            or len(self.wake_word.split()) != 1
+            or not self.wake_word.isalnum()
+        ):
+            raise ValueError("laptop wake word must be one alphanumeric word")
+        if (
+            not isinstance(self.wake_window_seconds, int)
+            or isinstance(self.wake_window_seconds, bool)
+            or not 1 <= self.wake_window_seconds <= 10
+        ):
+            raise ValueError("laptop wake window must be in [1, 10] seconds")
+
+
+@dataclass(frozen=True)
+class LocalSpecialistRuntimeConfig:
+    """Explicit laptop-hosted specialists used by the physical runtime."""
+
+    simulation_learning_config: Path
+    simulation_checkpoint: Path
+    component_ids: frozenset[str]
+    max_gripper_width_m: float
+    fixed_link_reach_tolerance_m: float
+    per_arm_payload_kg: float
+    placement_tolerance_m: float
+
+    def __post_init__(self) -> None:
+        supported = {
+            "baseten-grasp-pose",
+            "baseten-waypoint-policy",
+            "baseten-forward-dynamics",
+            "baseten-rigid-world",
+            "baseten-grasp-contact-world",
+            "baseten-task-reward",
+            "baseten-outcome-verifier",
+        }
+        if self.component_ids != supported:
+            missing = sorted(supported - self.component_ids)
+            extra = sorted(self.component_ids - supported)
+            raise ValueError(
+                "Local specialist profile must declare the complete single-arm set: "
+                f"missing={missing}, extra={extra}"
+            )
+        for name, value in (
+            ("max_gripper_width_m", self.max_gripper_width_m),
+            ("fixed_link_reach_tolerance_m", self.fixed_link_reach_tolerance_m),
+            ("per_arm_payload_kg", self.per_arm_payload_kg),
+            ("placement_tolerance_m", self.placement_tolerance_m),
+        ):
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(value)
+                or value <= 0
+            ):
+                raise ValueError(f"Local specialist {name} must be finite and positive")
+
+
+@dataclass(frozen=True)
 class PhysicalRuntimeConfig:
     path: Path
     robot_model: Path
@@ -177,9 +285,11 @@ class PhysicalRuntimeConfig:
     memory_path: Path
     journal_path: Path
     camera: CameraRuntimeConfig
+    audio: AudioRuntimeConfig
     controller: ControllerRuntimeConfig
     router: RouterConfig
     remote_components: Mapping[str, RemoteEndpointConfig]
+    local_specialists: LocalSpecialistRuntimeConfig | None = None
 
 
 def _resolved_relative(config_path: Path, value: Any, name: str) -> Path:
@@ -217,6 +327,19 @@ def load_physical_runtime_config(path: str | Path) -> PhysicalRuntimeConfig:
         device_env=camera_raw.get("device_env"),
         url_env=camera_raw.get("url_env"),
         token_env=camera_raw.get("token_env"),
+        rotation_degrees=camera_raw.get("rotation_degrees", 0),
+    )
+    audio_raw = raw.get("audio")
+    if not isinstance(audio_raw, dict):
+        raise TypeError("Physical runtime audio must be an object")
+    audio = AudioRuntimeConfig(
+        transport=audio_raw.get("transport", "ffmpeg_dshow"),
+        device_env=audio_raw.get("device_env", ""),
+        sample_rate_hz=audio_raw.get("sample_rate_hz", 16_000),
+        channels=audio_raw.get("channels", 1),
+        command_duration_seconds=audio_raw.get("command_duration_seconds", 5),
+        wake_word=audio_raw.get("wake_word", DEFAULT_WAKE_WORD),
+        wake_window_seconds=audio_raw.get("wake_window_seconds", 4),
     )
     controller_raw = raw.get("controller", {"transport": "local_pca9685"})
     if not isinstance(controller_raw, dict):
@@ -247,6 +370,38 @@ def load_physical_runtime_config(path: str | Path) -> PhysicalRuntimeConfig:
             url_env=value.get("url_env"),
             token_env=value.get("token_env"),
         )
+    local_raw = raw.get("local_specialists")
+    local_specialists = None
+    if local_raw is not None:
+        if not isinstance(local_raw, dict):
+            raise TypeError("Physical runtime local_specialists must be an object")
+        component_ids = local_raw.get("component_ids")
+        assumptions = local_raw.get("assumptions")
+        if (
+            not isinstance(component_ids, list)
+            or any(not isinstance(value, str) or not value.strip() for value in component_ids)
+            or len(component_ids) != len(set(component_ids))
+        ):
+            raise ValueError("Physical runtime local specialist IDs must be unique strings")
+        if not isinstance(assumptions, dict):
+            raise TypeError("Physical runtime local specialist assumptions must be an object")
+        local_specialists = LocalSpecialistRuntimeConfig(
+            _resolved_relative(
+                config_path,
+                local_raw.get("simulation_learning_config"),
+                "local_specialists.simulation_learning_config",
+            ),
+            _resolved_relative(
+                config_path,
+                local_raw.get("simulation_checkpoint"),
+                "local_specialists.simulation_checkpoint",
+            ),
+            frozenset(component_ids),
+            assumptions.get("max_gripper_width_m"),
+            assumptions.get("fixed_link_reach_tolerance_m"),
+            assumptions.get("per_arm_payload_kg"),
+            assumptions.get("placement_tolerance_m"),
+        )
     config = PhysicalRuntimeConfig(
         config_path,
         _resolved_relative(config_path, raw.get("robot_model"), "robot_model"),
@@ -255,15 +410,15 @@ def load_physical_runtime_config(path: str | Path) -> PhysicalRuntimeConfig:
             raw.get("camera_calibration"),
             "camera_calibration",
         ),
-        _resolved_relative(
-            config_path, raw.get("component_manifest"), "component_manifest"
-        ),
+        _resolved_relative(config_path, raw.get("component_manifest"), "component_manifest"),
         _resolved_relative(config_path, raw.get("memory_path"), "memory_path"),
         _resolved_relative(config_path, raw.get("journal_path"), "journal_path"),
         camera,
+        audio,
         controller,
         router,
         remote_components,
+        local_specialists,
     )
     manifest = json.loads(config.component_manifest.read_text(encoding="utf-8"))
     values = manifest.get("components") if isinstance(manifest, dict) else None
@@ -323,11 +478,23 @@ def prepare_physical_workspace(
     for name, expected in (
         ("coordinate_frame", "robot_base"),
         ("up_axis", model.up_axis),
-        ("table_height_m", float(table_height)),
     ):
         if name in result and result[name] != expected:
             raise ValueError(f"Workspace {name} contradicts calibrated value {expected}")
         result[name] = expected
+    # The checkerboard defines the camera's robot-base reference plane. A task
+    # may deliberately use a raised support surface, which is required by the
+    # current fixed-elbow reach arc. Keep the calibrated plane as the default
+    # while allowing an explicit finite task surface height.
+    task_table_height = result.get("table_height_m", float(table_height))
+    if (
+        not isinstance(task_table_height, (int, float))
+        or isinstance(task_table_height, bool)
+        or not math.isfinite(task_table_height)
+    ):
+        raise ValueError("Workspace table_height_m must be finite")
+    result["table_height_m"] = float(task_table_height)
+    result["calibration_reference_plane_height_m"] = float(table_height)
     perception = result.get("perception")
     if not isinstance(perception, Mapping):
         raise ValueError("Workspace needs a perception object with demo labels and dimensions")
@@ -496,6 +663,8 @@ def physical_runtime_factories(
     config: PhysicalRuntimeConfig,
     model: RobotModel,
     profile: PiRuntimeProfile,
+    *,
+    factory_overrides: Mapping[str, Callable[[], ModelComponent]] | None = None,
 ) -> Mapping[str, Callable[[], ModelComponent]]:
     model.require_motion_ready()
     factories: dict[str, Callable[[], ModelComponent]] = {
@@ -512,34 +681,87 @@ def physical_runtime_factories(
         controller_url = os.environ.get(config.controller.url_env or "")
         controller_token = os.environ.get(config.controller.token_env or "")
         if not controller_url:
-            raise RuntimeError(f"Set {config.controller.url_env} before starting MoIRA")
+            raise RuntimeError(
+                f"Set {config.controller.url_env} before starting {DISPLAY_NAME}"
+            )
         if not controller_token:
-            raise RuntimeError(f"Set {config.controller.token_env} before starting MoIRA")
+            raise RuntimeError(
+                f"Set {config.controller.token_env} before starting {DISPLAY_NAME}"
+            )
+
         def controller_factory() -> ModelComponent:
             return PiRobotControlComponent(controller_url, controller_token, model)
 
     else:
+
         def controller_factory() -> ModelComponent:
             return LazyPCA9685Control(model)
+
     factories.update(
         {
             "sqlite-personal-memory": lambda: SQLitePersonalMemory(config.memory_path),
             "local-bimanual-ik": lambda: PlanarBimanualIK.from_robot_model(model),
             "local-trajectory-planner": lambda: BoundedTrajectoryPlanner.from_robot_model(model),
-            "local-collision-checker": lambda: ConservativeCollisionChecker.from_robot_model(
-                model
-            ),
+            "local-collision-checker": lambda: ConservativeCollisionChecker.from_robot_model(model),
             "local-safety-risk": lambda: HardSafetyRiskModel.from_robot_model(model),
             "local-tactile-signal": lambda: TactileSignalModel.from_robot_model(model),
             "dual-arm-hardware": controller_factory,
-            "local-failure-classifier": lambda: TelemetryFailureClassifier.from_robot_model(
-                model
-            ),
+            "local-failure-classifier": lambda: TelemetryFailureClassifier.from_robot_model(model),
             "local-load-estimator": TelemetryLoadEstimator,
             "local-prediction-error": WorldModelErrorTracker,
             "local-load-feedback": lambda: LoadFeedbackComponent.from_robot_model(model),
         }
     )
+    local = config.local_specialists
+    if local is not None:
+        learned_models = AcceptedSimulationModels(
+            local.simulation_checkpoint,
+            load_simulation_learning_config(local.simulation_learning_config),
+        )
+        local_factories: dict[str, Callable[[], ModelComponent]] = {
+            "baseten-grasp-pose": AnalyticGraspPlanner,
+            "baseten-waypoint-policy": lambda: SpecializedManipulationPolicy("waypoint"),
+            "baseten-forward-dynamics": lambda: LearnedForwardDynamics(
+                learned_models,
+                max_gripper_width_m=local.max_gripper_width_m,
+            ),
+            "baseten-rigid-world": lambda: StateSpaceWorldModel(
+                "rigid-dynamics",
+                per_arm_payload_kg=local.per_arm_payload_kg,
+            ),
+            "baseten-grasp-contact-world": lambda: StateSpaceWorldModel(
+                "grasp-contact",
+                per_arm_payload_kg=local.per_arm_payload_kg,
+            ),
+            "baseten-task-reward": ModelBasedTaskReward,
+            "baseten-outcome-verifier": lambda: TelemetryOutcomeVerifier(
+                placement_tolerance_m=local.placement_tolerance_m
+            ),
+            "local-bimanual-ik": lambda: LearnedWaypointKinematics(
+                learned_models,
+                max_gripper_width_m=local.max_gripper_width_m,
+                position_tolerance_m=local.fixed_link_reach_tolerance_m,
+            ),
+        }
+        undeclared = set(local_factories) - (
+            set(local.component_ids) | {"local-bimanual-ik"}
+        )
+        if undeclared:
+            raise ValueError(
+                "Local specialist factories contain undeclared component IDs: "
+                + ", ".join(sorted(undeclared))
+            )
+        factories.update(local_factories)
+    if factory_overrides is not None:
+        unknown = set(factory_overrides) - set(factories)
+        if unknown:
+            raise ValueError(
+                "Physical factory overrides contain unknown component IDs: "
+                + ", ".join(sorted(unknown))
+            )
+        if any(not callable(factory) for factory in factory_overrides.values()):
+            raise TypeError("Physical factory overrides must contain callables")
+        factories.update(factory_overrides)
     return factories
 
 
@@ -548,12 +770,19 @@ def build_physical_session(
     cameras: tuple[Any, ...],
     *,
     profile: PiRuntimeProfile | None = None,
+    event_sink: Callable[[PipelineEvent], None] | None = None,
+    factory_overrides: Mapping[str, Callable[[], ModelComponent]] | None = None,
 ) -> PhysicalSession:
     load_runtime_environment()
     model = load_robot_model(config.robot_model, verify_source=True)
     model.require_motion_ready()
     profile = profile or PiRuntimeProfile.for_pi4()
-    factories = physical_runtime_factories(config, model, profile)
+    factories = physical_runtime_factories(
+        config,
+        model,
+        profile,
+        factory_overrides=factory_overrides,
+    )
     registry = ComponentRegistry.from_json(
         config.component_manifest,
         factories,
@@ -562,7 +791,9 @@ def build_physical_session(
     )
     router_id = os.environ.get(config.router.id_env)
     if not router_id:
-        raise RuntimeError(f"Set {config.router.id_env} in .env before starting MoIRA")
+        raise RuntimeError(
+            f"Set {config.router.id_env} in .env before starting {DISPLAY_NAME}"
+        )
     router_environment = os.environ.get(
         config.router.environment_env,
         config.router.default_environment,
@@ -578,16 +809,36 @@ def build_physical_session(
         router=ExactContractRouter(registry, semantic),
         profile=profile,
         require_camera_verification=True,
+        event_sink=event_sink,
     )
     return PhysicalSession(system, cameras, JsonlRunJournal(config.journal_path))
 
 
-def inspect_physical_runtime(config: PhysicalRuntimeConfig) -> dict[str, Any]:
+def inspect_physical_runtime(
+    config: PhysicalRuntimeConfig,
+    *,
+    local_component_ids: Collection[str] = (),
+) -> dict[str, Any]:
     load_runtime_environment()
     model = load_robot_model(config.robot_model, verify_source=True)
+    configured_local_ids = (
+        frozenset()
+        if config.local_specialists is None
+        else config.local_specialists.component_ids
+    )
+    local_ids = frozenset(local_component_ids) | configured_local_ids
+    if any(not isinstance(component_id, str) for component_id in local_ids):
+        raise TypeError("local_component_ids must contain strings")
+    unknown_local_ids = local_ids - set(config.remote_components)
+    if unknown_local_ids:
+        raise ValueError(
+            "Local physical component overrides contain unknown component IDs: "
+            + ", ".join(sorted(unknown_local_ids))
+        )
     endpoint_variables = {
         component_id: endpoint.required_environment_variable
         for component_id, endpoint in config.remote_components.items()
+        if component_id not in local_ids
     }
     missing_endpoint_variables = sorted(
         variable
@@ -596,7 +847,7 @@ def inspect_physical_runtime(config: PhysicalRuntimeConfig) -> dict[str, Any]:
     )
     core_variables = {
         endpoint_variables[component_id]
-        for component_id in SINGLE_ARM_PICK_PLACE_COMPONENTS
+        for component_id in SINGLE_ARM_PICK_PLACE_COMPONENTS & set(endpoint_variables)
         if endpoint_variables[component_id] is not None
     }
     missing_core_variables = sorted(
@@ -608,12 +859,8 @@ def inspect_physical_runtime(config: PhysicalRuntimeConfig) -> dict[str, Any]:
     base_key_present = bool(os.environ.get("BASETEN_API_KEY"))
     router_present = bool(os.environ.get(config.router.id_env))
     opencv_present = importlib.util.find_spec("cv2") is not None
-    camera_url_present = bool(
-        config.camera.url_env and os.environ.get(config.camera.url_env)
-    )
-    camera_token_present = bool(
-        config.camera.token_env and os.environ.get(config.camera.token_env)
-    )
+    camera_url_present = bool(config.camera.url_env and os.environ.get(config.camera.url_env))
+    camera_token_present = bool(config.camera.token_env and os.environ.get(config.camera.token_env))
     camera_device_present = bool(
         config.camera.device_env and os.environ.get(config.camera.device_env)
     )
@@ -647,7 +894,16 @@ def inspect_physical_runtime(config: PhysicalRuntimeConfig) -> dict[str, Any]:
     else:
         controller_ready = True
         controller_blockers = []
-    blockers = [*model.readiness_issues]
+    local_specialist_issues: list[str] = []
+    if config.local_specialists is not None:
+        local = config.local_specialists
+        for name, path in (
+            ("simulation learning config", local.simulation_learning_config),
+            ("simulation checkpoint", local.simulation_checkpoint),
+        ):
+            if not path.is_file():
+                local_specialist_issues.append(f"local specialist {name} is missing: {path}")
+    blockers = [*model.readiness_issues, *local_specialist_issues]
     if not base_key_present:
         blockers.append("BASETEN_API_KEY is not set")
     if not router_present:
@@ -671,11 +927,16 @@ def inspect_physical_runtime(config: PhysicalRuntimeConfig) -> dict[str, Any]:
         "router_id_present": router_present,
         "component_endpoints": {
             component_id: {
-                "environment_variable": variable,
+                "environment_variable": endpoint.required_environment_variable,
                 "transport": config.remote_components[component_id].transport,
-                "configured": variable is None or bool(os.environ.get(variable)),
+                "configured": (
+                    component_id in local_ids
+                    or endpoint.required_environment_variable is None
+                    or bool(os.environ.get(endpoint.required_environment_variable))
+                ),
+                "overridden_locally": component_id in local_ids,
             }
-            for component_id, variable in endpoint_variables.items()
+            for component_id, endpoint in config.remote_components.items()
         },
         "missing_core_endpoint_variables": missing_core_variables,
         "missing_optional_endpoint_variables": missing_optional_variables,
@@ -691,6 +952,8 @@ def inspect_physical_runtime(config: PhysicalRuntimeConfig) -> dict[str, Any]:
         "controller_ready": controller_ready,
         "controller_url_present": controller_url_present,
         "controller_token_present": controller_token_present,
+        "local_specialist_components": sorted(configured_local_ids),
+        "local_specialist_issues": local_specialist_issues,
         "memory_path": str(config.memory_path),
         "journal_path": str(config.journal_path),
         "blockers": tuple(dict.fromkeys(blockers)),

@@ -1,33 +1,32 @@
-# Four-DOF desktop arm
+# Desktop arm CAD reference and active three-actuator build
 
-This is the active MoIRA robot profile. Its primary source is
+The CAD reference is `model.json`. The active physical build is
+`physical_three_actuator_model.json`. Both come from
 `Sharma_Ishaan_robotAssem.SLDASM` in the supplied
 `4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)` directory. The accompanying
 `Robotic+Arm.3mf` contains the printable meshes and slicer layout.
 `source_manifest.json` pins the assembly, all 16 CAD dependencies, and the 3MF
 by byte length and SHA-256 digest.
 
-The design has four actuators:
+The CAD design has four actuators, but the physical elbow servo has failed and
+holds the elbow rigidly. The active build therefore has three actuators:
 
 | Joint | Function | Servo |
 | --- | --- | --- |
 | `J1_BASE_YAW` | turntable yaw | MG996R |
 | `J2_SHOULDER` | shoulder pitch | MG996R |
-| `J3_ELBOW` | elbow pitch | SG90 |
-| `J4_END_EFFECTOR` | wrist/gripper lever | SG90 |
+| fixed elbow | rigid at the exported assembly pose | disabled; former channel 2 |
+| `J3_GRIPPER` | gripper lever | SG90, channel 2 |
 
-MoIRA treats the first three as positioning joints and the fourth as the
-end-effector aperture command. The original design description calls the last
-stage a wrist/gripper mechanism; its exact servo-to-jaw travel must be measured
-on this build before execution.
+MoIRA exposes base yaw and shoulder pitch as the two positioning coordinates.
+The coupled gripper is the third command. No runtime path can command channel 2
+or create an elbow degree of freedom.
 
-The profile is intentionally motion-disabled. Values inherited from the
-retired arm were removed, including its joint limits, 25 g payload rating,
-Y-up frame, channel assignment, and installed-arm state. Arm #1 has since been
-confirmed installed with base, shoulder, elbow, and gripper on PCA9685 channels
-0, 1, 2, and 3. The configuration will not command a servo until joint limits,
-pulse endpoints, speed limits, power compatibility, payload, collision model,
-and stop path have been validated.
+The profile remains motion-disabled. Arm #1 uses channels 0, 1, and 3 for base,
+shoulder, and gripper. The Arduino calibration used the Adafruit PCA9685 driver
+at 50 Hz with a 102-to-512 tick range; the exact mapping and observed commands
+are in `config/arm1_servo_observations.json`. Motion stays locked until the
+remaining speed, aperture, payload, collision, power, and stop checks complete.
 
 ## What the 3MF establishes
 
@@ -86,34 +85,36 @@ fixed, primary-finger, and mirror-finger meshes using named CAD occurrences:
 The merge fills link dimensions, joint origins, and axes. Joint limits remain
 empty until measured on the physical build.
 
-Generate and validate the CAD-derived MuJoCo hierarchy with:
+Generate and validate the active fixed-elbow MuJoCo hierarchy with:
 
 ```powershell
 .\.venv\Scripts\python.exe .\tools\generate_mujoco_model.py `
-  .\robot_models\four_dof_desktop_arm\model.json `
-  .\robot_models\four_dof_desktop_arm\kinematic_validation.xml
+  .\robot_models\four_dof_desktop_arm\physical_three_actuator_model.json `
+  .\robot_models\four_dof_desktop_arm\physical_three_actuator_validation.xml
 
 .\.venv-training\Scripts\python.exe .\tools\validate_mujoco_model.py `
-  .\robot_models\four_dof_desktop_arm\kinematic_validation.xml `
-  --output .\robot_models\four_dof_desktop_arm\mujoco_validation.json `
-  --robot-model .\robot_models\four_dof_desktop_arm\model.json
+  .\robot_models\four_dof_desktop_arm\physical_three_actuator_validation.xml `
+  --output .\robot_models\four_dof_desktop_arm\physical_three_actuator_validation.json `
+  --robot-model .\robot_models\four_dof_desktop_arm\physical_three_actuator_model.json `
+  --visual-reviewed
 
 .\.venv-training\Scripts\python.exe .\tools\render_mujoco_validation.py `
-  .\robot_models\four_dof_desktop_arm\kinematic_validation.xml `
-  .\robot_models\four_dof_desktop_arm\kinematic_validation.png `
-  .\robot_models\four_dof_desktop_arm\joint_motion_validation.png
+  .\robot_models\four_dof_desktop_arm\physical_three_actuator_validation.xml `
+  .\robot_models\four_dof_desktop_arm\physical_three_actuator_validation.png `
+  .\robot_models\four_dof_desktop_arm\physical_three_actuator_motion_validation.png
 ```
 
 This MJCF is intentionally limited to kinematic validation. It uses zero
 gravity and has no actuators or invented limits. The two CAD-derived gripper
 hinges are linked by a -1:1 gear equality, so they counter-rotate from the one
-physical `J4_END_EFFECTOR` command. Training dynamics must wait for physical
+physical `J3_GRIPPER` command. The forearm body has no elbow joint in the active
+MJCF. Training dynamics must wait for physical
 mass, inertia, friction, servo response, and joint-limit data.
 
 ## Physical calibration still required
 
 The existing PCA9685 and external 6 V/10 A supply are recorded. Arm #1 is
-installed on channels 0 through 3. Confirm the actual SG90 label permits 6 V
+installed on channels 0, 1, and 3; channel 2 is disabled. Confirm the actual SG90 label permits 6 V
 before connecting the servo rail. Then record:
 
 - safe lower, upper, and home pulse widths for Arm #1, found at low speed;
@@ -138,10 +139,9 @@ Apply it atomically to both model copies with:
 
 ```powershell
 .\.venv\Scripts\moira.exe servo-calibration-apply `
-  .\robot_models\four_dof_desktop_arm\model.json `
+  .\robot_models\four_dof_desktop_arm\physical_three_actuator_model.json `
   .\config\arm1_servo_calibration.json `
-  --output .\robot_models\four_dof_desktop_arm\model.json `
-  --packaged-output .\src\moira\data\four_dof_desktop_arm.json
+  --output .\robot_models\four_dof_desktop_arm\physical_three_actuator_model.json
 ```
 
 This command records the calibration hash and still leaves physical output
@@ -160,8 +160,8 @@ Check what still blocks physics rollout generation with:
 
 ```powershell
 .\.venv\Scripts\moira.exe simulation-training-preflight `
-  .\robot_models\four_dof_desktop_arm\model.json `
-  .\robot_models\four_dof_desktop_arm\kinematic_validation.xml `
+  .\robot_models\four_dof_desktop_arm\physical_three_actuator_model.json `
+  .\robot_models\four_dof_desktop_arm\physical_three_actuator_validation.xml `
   --servo-calibration .\config\arm1_servo_calibration.json `
   --camera-calibration .\config\co6_camera_calibration.json `
   --simulation-config .\config\simulation_training.json

@@ -58,8 +58,12 @@ def main() -> int:
     targets: dict[str, tuple[str, str]] = {}
     skipped: list[str] = []
     for component_id, endpoint in config.remote_components.items():
+        if endpoint.transport != "baseten_deployment" or endpoint.entity != "model":
+            continue
+        if endpoint.id_env is None:
+            continue
         model_id = os.environ.get(endpoint.id_env)
-        if not model_id or endpoint.entity != "model":
+        if not model_id:
             continue
         environment = os.environ.get(
             endpoint.environment_env,
@@ -85,9 +89,7 @@ def main() -> int:
     deadline = time.monotonic() + args.timeout_seconds
     while True:
         statuses = {
-            component_id: client.inspect("model", model_id, environment).get(
-                "deployment_status"
-            )
+            component_id: client.inspect("model", model_id, environment).get("deployment_status")
             for component_id, (model_id, environment) in targets.items()
         }
         if all(status == "ACTIVE" for status in statuses.values()):
@@ -104,9 +106,7 @@ def main() -> int:
             )
             return 0
         if time.monotonic() >= deadline:
-            raise TimeoutError(
-                f"Baseten models did not become active before timeout: {statuses}"
-            )
+            raise TimeoutError(f"Baseten models did not become active before timeout: {statuses}")
         time.sleep(args.poll_seconds)
 
 

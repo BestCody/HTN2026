@@ -76,6 +76,32 @@ def test_prototype_router_uses_expert_owned_examples_without_a_routing_head():
     assert dict(decision.scores)["dual"] == pytest.approx(1)
 
 
+def test_prototype_centroid_prevents_one_phrase_from_dominating():
+    registry = ExpertRegistry(
+        [
+            Expert("balanced", "balanced", "balanced", routing_examples=("outlier",)),
+            Expert("match", "match", "match", routing_examples=("match",)),
+        ]
+    )
+    encoder = Encoder(
+        {
+            "balanced": [1, 0],
+            "outlier": [0, 1],
+            "match": [0.6, 0.8],
+            "task": [0, 1],
+        }
+    )
+
+    maximum = PrototypeEmbeddingRouter(registry, encoder).route("task")
+    centroid = PrototypeEmbeddingRouter(
+        registry, encoder, aggregation="centroid"
+    ).route("task")
+
+    assert maximum.expert_id == "balanced"
+    assert centroid.expert_id == "match"
+    assert centroid.strategy == "prototype_centroid_embedding"
+
+
 def test_adding_removing_experts_refreshes_cache(registry):
     encoder = Encoder({"first description": [1, 0], "second description": [0, 1], "task": [-1, 0]})
     router = EmbeddingRouter(registry, encoder)

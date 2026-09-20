@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "validated_for_physical_use": false,
+  "robot_model": "../robot_models/four_dof_desktop_arm/physical_three_actuator_model.json",
+  "memory_path": "../outputs/mext_sim_demo/memory.db",
+  "journal_path": "../outputs/mext_sim_demo/runs.jsonl",
+  "scene_image": "../outputs/mext_sim_demo/initial_overview.jpg",
+  "command_audio": "../outputs/mext_sim_demo/command.wav",
+  "simulation_learning_config": "simulation_learning.json",
+  "simulation_checkpoint": "../checkpoints/simulation-learning/current.json",
+  "simulation": {
+    "mujoco_model": "../robot_models/four_dof_desktop_arm/simulation_demo.xml",
+    "output_dir": "../outputs/mext_sim_demo",
+    "width": 640,
+    "height": 480,
+    "fps": 10,
+    "playback_speed": 1.0
+  },
+  "profile": {
+    "component_ram_budget_mb": 256,
+    "simulation_workers": 2,
+    "simulation_horizon_seconds": 2.5,
+    "simulation_step_seconds": 0.1,
+    "max_candidate_plans": 3,
+    "cloud_timeout_seconds": 300.0
+  },
+  "integration_assumptions": {
+    "per_arm_payload_kg": 0.025,
+    "max_gripper_width_m": 0.06,
+    "fixed_link_reach_tolerance_m": 0.03,
+    "required_clearance_m": 0.02,
+    "max_joint_velocity_rad_s": 5.5,
+    "max_gripper_velocity_m_s": 0.1,
+    "max_gripper_force_n": 20.0,
+    "max_slip_probability": 0.35,
+    "max_collision_probability": 0.2,
+    "min_grasp_stability_score": 0.6
+  },
+  "workspace": {
+    "coordinate_frame": "robot_base",
+    "up_axis": "y",
+    "table_height_m": 0.0,
+    "minimum_clearance_m": 0.08,
+    "people_present": false,
+    "human_error_policy": {
+      "max_pre_execution_target_drift_m": 0.05,
+      "monitor_scene_between_steps": true
+    },
+    "perception": {
+      "labels": ["red cube", "green platform"],
+      "confidence_threshold": 0.3,
+      "hazard_labels": [],
+      "object_dimensions_m": {
+        "red cube": [0.042, 0.042, 0.042],
+        "green platform": [0.15, 0.024, 0.13]
+      },
+      "object_masses_kg": {
+        "red cube": 0.025,
+        "green platform": 0.1
+      },
+      "camera_calibrations": {}
+    }
+  }
+}

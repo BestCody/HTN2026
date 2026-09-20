@@ -1,4 +1,4 @@
-"""Animated terminal presentation for the non-actuating MoIRA judge demo."""
+"""Animated terminal presentation for the non-actuating Charlie judge demo."""
 
 from __future__ import annotations
 
@@ -15,7 +15,9 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from rich.text import Text
 
+from .brand import DISPLAY_NAME_UPPER
 from .physical import PhysicalAIResult, PipelineEvent
+from .presentation_names import specialist_display_name, world_model_display_name
 from .software_integration import SoftwareIntegrationConfig, SoftwareIntegrationRun
 
 
@@ -23,10 +25,10 @@ class JudgeDemoTrace:
     """Turn real pipeline events into a high-energy, thread-safe terminal show."""
 
     _LOGO = (
-        " M   M   OOO   III  RRRR     A   ",
-        " MM MM  O   O   I   R   R   A A  ",
-        " M M M  O   O   I   RRRR   AAAAA ",
-        " M   M   OOO   III  R  R  A     A",
+        "  CCCC  H   H   AAA   RRRR   L      III  EEEEE ",
+        " C      H   H  A   A  R   R  L       I   E     ",
+        " C      HHHHH  AAAAA  RRRR   L       I   EEEE  ",
+        "  CCCC  H   H  A   A  R  R   LLLLL  III  EEEEE ",
     )
 
     def __init__(self, stream: TextIO | None = None, *, color: bool | None = None) -> None:
@@ -131,12 +133,13 @@ class JudgeDemoTrace:
         if event.kind == "route.selected":
             layer = event.layer.value.upper() if event.layer else "MODEL"
             via = event.router or "exact-contract"
+            specialist = specialist_display_name(event.component_id)
             self._line(
                 event,
                 "MODEL ROUTE",
                 (
-                    f"{layer} / {event.capability}  >>>  {event.component_id}  "
-                    f"[{event.model}]  runtime={event.runtime}  via={via}"
+                    f"{layer}  >>>  {specialist}  |  model={event.model}  "
+                    f"runtime={event.runtime}  via={via}"
                 ),
                 "bright_cyan",
             )
@@ -144,7 +147,7 @@ class JudgeDemoTrace:
         if event.kind == "component.started":
             self._start_task(
                 f"component:{event.component_id}",
-                f"{event.component_id}  //  {event.model}",
+                f"{specialist_display_name(event.component_id)}  //  {event.model}",
             )
             return
         if event.kind == "component.completed":
@@ -153,7 +156,10 @@ class JudgeDemoTrace:
             self._line(
                 event,
                 "COMPLETE",
-                f"{event.component_id} -> {details.get('output_type')}  ({latency:.3f}s)",
+                (
+                    f"{specialist_display_name(event.component_id)} -> "
+                    f"{details.get('output_type')}  ({latency:.3f}s)"
+                ),
                 "bright_green",
             )
             return
@@ -163,7 +169,10 @@ class JudgeDemoTrace:
             self._line(
                 event,
                 "FAILED",
-                f"{event.component_id}: {details.get('error_type')} after {latency:.3f}s",
+                (
+                    f"{specialist_display_name(event.component_id)}: "
+                    f"{details.get('error_type')} after {latency:.3f}s"
+                ),
                 "bold bright_red",
             )
             return
@@ -172,7 +181,7 @@ class JudgeDemoTrace:
                 Panel(
                     Text.assemble(
                         ("VOICE COMMAND LOCKED\n", "bold bright_yellow"),
-                        (f'“{details["text"]}”', "bold bright_white"),
+                        (f"“{details['text']}”", "bold bright_white"),
                     ),
                     title="[bold bright_yellow]WHISPER LARGE V3 TURBO[/]",
                     border_style="bright_yellow",
@@ -299,14 +308,18 @@ class JudgeDemoTrace:
             self.console.print(
                 Panel(
                     Text.assemble(
-                        ("MiniLM selected ", "bright_white"),
-                        (str(event.component_id), "bold bright_magenta"),
+                        ("MiniLM selected\n", "bright_white"),
+                        (specialist_display_name(event.component_id), "bold bright_magenta"),
                         "\n",
-                        (str(event.model), "bold bright_cyan"),
+                        (f"MODEL  {event.model}", "bold bright_cyan"),
                         "\n",
-                        (f"candidate {candidate}  |  {latency:.3f}s", "dim"),
+                        (
+                            f"internal route {event.component_id}  |  "
+                            f"candidate {candidate}  |  {latency:.3f}s",
+                            "dim",
+                        ),
                     ),
-                    title="[bold bright_magenta]MoIRA ROUTER DECISION[/]",
+                    title=f"[bold bright_magenta]{DISPLAY_NAME_UPPER} ROUTER DECISION[/]",
                     border_style="bright_magenta",
                     box=box.HEAVY,
                     padding=(0, 2),
@@ -322,10 +335,14 @@ class JudgeDemoTrace:
             prediction.append(f"{details.get('candidate_id')}\n", style="bold bright_white")
             prediction.append(self._score_bar(score), style=style)
             prediction.append(f"  score={score:.3f}  {status}\n", style=style)
+            world_models = tuple(
+                world_model_display_name(str(model))
+                for model in details.get("world_models", ())
+            )
             prediction.append(
                 (
                     f"{float(details.get('horizon_seconds', 0.0)):.2f}s future  |  "
-                    f"models: {self._joined(details.get('world_models'))}"
+                    f"specialists: {self._joined(world_models)}"
                 ),
                 style="dim",
             )
@@ -482,12 +499,12 @@ class JudgeDemoTrace:
             )
             topology = Text(justify="center")
             stages = (
-                "MIC",
-                "WHISPER",
-                "VISION + MEMORY",
-                "MoIRA ROUTER",
-                "3 FUTURES",
-                "SAFE PLAN",
+                "VOICE INPUT",
+                "SPEECH SPECIALIST",
+                "VISION + MEMORY SPECIALISTS",
+                "TASK ROUTER",
+                "PHYSICS SPECIALISTS",
+                "SAFE MOVEMENT",
             )
             for index, stage in enumerate(stages):
                 if index:

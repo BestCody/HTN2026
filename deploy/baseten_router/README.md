@@ -1,25 +1,30 @@
-# Baseten semantic router Chain
+# Baseten specialist router Chain
 
-This CPU Chain implements the paper-style frozen MoIRA router. The Pi first
+This CPU Chain packages the project-trained MiniLM bi-encoder. The laptop first
 filters the catalog by a typed interface or exact capability and sends only
-compatible, allow-listed component IDs. When that pool contains more than one
-specialist, the Chain embeds the task plus each specialist's natural-language
-description and representative routing phrases with
-`sentence-transformers/all-MiniLM-L6-v2`, then returns the ID whose best
-prototype has the highest cosine similarity. A one-item compatibility pool is
-returned directly because there is no semantic choice to make.
+compatible, allow-listed component IDs. For a multi-model pool, the Chain
+embeds the task and each specialist's metadata, normalizes each specialist's
+prototype centroid, and returns the highest cosine score. A singleton pool is
+selected directly because there is no semantic choice.
 
-There is no task-to-component route table and no trained routing head. Add or
-replace a compatible specialist by editing its metadata in
-`specialists.json`; the frozen router weights do not change. The caller must
-supply `context.routing_text` whenever more than one component is eligible.
-Unknown IDs, missing routing text, model failures, and invalid selections are
-errors. This path has no automatic fallback.
+There is no task-to-component route table or classification head. Training uses
+triplet loss to move project task language toward the correct specialist
+metadata and away from the hardest compatible specialist. Unknown IDs, missing
+routing text, model failures, and invalid selections are errors; there is no
+automatic model fallback.
 
+The accepted checkpoint is generated under the ignored `checkpoints/` tree.
+Stage it into the ignored deployment bundle before either dry-run or push:
+
+```powershell
+.\tools\stage_router_checkpoint.ps1
+```
+
+The deployment must contain `deploy/baseten_router/model/model.safetensors` and
+`moira_training.json`. `router.py` loads only that local checkpoint with offline
+model loading; it does not download or substitute the original MiniLM weights.
 Keep `specialists.json` synchronized with
-`examples/physical_ai_specialists.json`; the test suite enforces byte-equivalent
-JSON data. Install the Baseten/Truss tooling in a deployment environment,
-authenticate, and run:
+`examples/physical_ai_specialists.json`; tests enforce equivalent JSON data.
 
 ```bash
 cd deploy/baseten_router
@@ -29,5 +34,5 @@ truss chains push router.py --promote
 
 The Chain returns a component ID, routing strategy, model ID, and similarity
 scores. It never returns a URL, credential, motor command, or model output. The
-Pi validates the returned ID against its own catalog before invocation, and
+laptop validates the returned ID against its own catalog before invocation;
 local safety and motor authority remain on the robot.

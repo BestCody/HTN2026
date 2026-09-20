@@ -4,6 +4,7 @@ import pytest
 
 from moira.physical import (
     ActionChunk,
+    CameraFrame,
     CandidatePlan,
     ControlInput,
     FinalPlan,
@@ -145,3 +146,20 @@ def test_pi_service_starts_locked_without_opening_i2c():
                 "control": asdict(control_input()),
             }
         )
+
+
+def test_pi_service_camera_does_not_enable_motion():
+    class Camera:
+        camera_id = "co6-usb"
+
+        def capture(self):
+            return CameraFrame("co6-usb", b"\xff\xd8\xffframe\xff\xd9", 123.0)
+
+    model = load_bundled_robot_model()
+    application = PiRobotControllerApplication(model, camera=Camera())
+
+    assert application.health()["camera_enabled"] is True
+    assert application.health()["motion_enabled"] is False
+    captured = application.capture()
+    assert captured["camera_id"] == "co6-usb"
+    assert captured["data_base64"] == "/9j/ZnJhbWX/2Q=="

@@ -43,17 +43,29 @@ def render(model_path: Path, home_path: Path, motion_path: Path) -> None:
     camera.azimuth = 125
     camera.elevation = -18
 
+    joint_names = {
+        mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, index)
+        for index in range(model.njnt)
+    }
     coupling = float(model.eq_data[0][1])
+    if "J3_ELBOW" in joint_names:
+        gripper_joint = "J4_END_EFFECTOR"
+        mirror_joint = "J4_END_EFFECTOR_MIRROR"
+        elbow_pose = (("J3 -25 deg", {"J3_ELBOW": math.radians(-25)}),)
+    else:
+        gripper_joint = "J3_GRIPPER"
+        mirror_joint = "J3_GRIPPER_MIRROR"
+        elbow_pose = ()
     poses = (
         ("home", {}),
         ("J1 +30 deg", {"J1_BASE_YAW": math.radians(30)}),
         ("J2 +25 deg", {"J2_SHOULDER": math.radians(25)}),
-        ("J3 -25 deg", {"J3_ELBOW": math.radians(-25)}),
+        *elbow_pose,
         (
-            "J4 coupled +35 deg",
+            f"{gripper_joint} coupled +35 deg",
             {
-                "J4_END_EFFECTOR": math.radians(35),
-                "J4_END_EFFECTOR_MIRROR": math.radians(35) / coupling,
+                gripper_joint: math.radians(35),
+                mirror_joint: math.radians(35) / coupling,
             },
         ),
     )

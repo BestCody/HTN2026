@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "robot_model_id": "three-actuator-desktop-arm-v2",
+  "physical_id": "arm_1",
+  "controller": {
+    "i2c_address": 64,
+    "reference_clock_hz": 25000000,
+    "pwm_frequency_hz": 50
+  },
+  "arduino_mapping": {
+    "angle_range_deg": [
+      0,
+      180
+    ],
+    "tick_range": [
+      102,
+      512
+    ],
+    "formula": "tick = 102 + trunc(command_deg * 410 / 180)"
+  },
+  "servos": {
+    "J1_BASE_YAW": {
+      "channel": 0,
+      "lower_command_deg": 0,
+      "upper_command_deg": 123,
+      "home_command_deg": 0,
+      "maximum_rate_deg_s": 10.0,
+      "calibration_anchors": {
+        "front": 0,
+        "left": 60,
+        "back_approx": 123
+      }
+    },
+    "J2_SHOULDER": {
+      "channel": 1,
+      "lower_command_deg": 0,
+      "upper_command_deg": 90,
+      "home_command_deg": 0,
+      "maximum_rate_deg_s": 5.0,
+      "calibration_anchors": {
+        "leaning_back_approx": 0,
+        "all_the_way_down_approx": 90
+      },
+      "forbidden_above_command_deg": 90
+    },
+    "J3_GRIPPER": {
+      "channel": 2,
+      "lower_command_deg": 83,
+      "upper_command_deg": 180,
+      "home_command_deg": 180,
+      "maximum_rate_deg_s": 15.0,
+      "calibration_anchors": {
+        "first_contact_approx": 83,
+        "maximum_open": 180
+      },
+      "pressure_commands_below_deg": 83,
+      "pressure_commands_enabled": false
+    }
+  },
+  "disabled_channels": [
+    3
+  ],
+  "voice_demo_targets": {
+    "base_front_deg": 0,
+    "base_left_deg": 60,
+    "base_back_deg": 123,
+    "shoulder_raised_deg": 20,
+    "shoulder_lowered_deg": 45,
+    "gripper_open_deg": 180,
+    "gripper_closed_deg": 83,
+    "pickup_load_pause_seconds": 3.0
+  },
+  "validation": {
+    "physical_velocity_validated": false,
+    "stop_validated": false
+  }
+}

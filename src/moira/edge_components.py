@@ -9,8 +9,10 @@ import sqlite3
 import subprocess
 import urllib.error
 import urllib.request
+import wave
 from collections.abc import Iterator
 from contextlib import contextmanager
+from io import BytesIO
 from pathlib import Path
 from threading import RLock
 from time import time
@@ -508,6 +510,7 @@ class OpenCVCameraSource:
         height: int = 480,
         warmup_frames: int = 3,
         jpeg_quality: int = 85,
+        rotation_degrees: int = 0,
     ) -> None:
         if not isinstance(source, (int, str)) or isinstance(source, bool):
             raise TypeError("Camera source must be a device index or path")
@@ -534,12 +537,15 @@ class OpenCVCameraSource:
             or not 1 <= jpeg_quality <= 100
         ):
             raise ValueError("jpeg_quality must be an integer in [1, 100]")
+        if rotation_degrees not in (0, 90, 180, 270):
+            raise ValueError("rotation_degrees must be 0, 90, 180, or 270")
         self.source = source
         self.camera_id = camera_id
         self.width = width
         self.height = height
         self.warmup_frames = warmup_frames
         self.jpeg_quality = jpeg_quality
+        self.rotation_degrees = rotation_degrees
         self._capture: Any | None = None
         self._lock = RLock()
 
@@ -570,6 +576,13 @@ class OpenCVCameraSource:
                 if not ok or image is None:
                     self.close()
                     raise RuntimeError(f"USB camera {self.source} did not return a frame")
+            if self.rotation_degrees:
+                rotations = {
+                    90: cv2.ROTATE_90_COUNTERCLOCKWISE,
+                    180: cv2.ROTATE_180,
+                    270: cv2.ROTATE_90_CLOCKWISE,
+                }
+                image = cv2.rotate(image, rotations[self.rotation_degrees])
             ok, encoded = cv2.imencode(
                 ".jpg",
                 image,
@@ -586,8 +599,94 @@ class OpenCVCameraSource:
             self._capture = None
 
 
+class V4L2JpegSource:
+    """Capture one native MJPEG frame from a Linux UVC camera without OpenCV."""
+
+    def __init__(
+        self,
+        device: str,
+        *,
+        camera_id: str = "co6-usb",
+        width: int = 640,
+        height: int = 480,
+        fps: int = 30,
+        warmup_frames: int = 3,
+        timeout_seconds: float = 5.0,
+        max_frame_bytes: int = 4 * 1024 * 1024,
+    ) -> None:
+        if not isinstance(device, str) or not device.startswith("/dev/"):
+            raise ValueError("V4L2 camera device must be an absolute /dev path")
+        if not isinstance(camera_id, str) or not camera_id.strip():
+            raise ValueError("camera_id must be a non-empty string")
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 1
+            for value in (width, height, fps)
+        ):
+            raise ValueError("Camera width, height, and FPS must be positive integers")
+        if (
+            not isinstance(warmup_frames, int)
+            or isinstance(warmup_frames, bool)
+            or warmup_frames < 0
+        ):
+            raise ValueError("warmup_frames must be a nonnegative integer")
+        if (
+            not isinstance(timeout_seconds, (int, float))
+            or isinstance(timeout_seconds, bool)
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("Camera timeout must be finite and positive")
+        if (
+            not isinstance(max_frame_bytes, int)
+            or isinstance(max_frame_bytes, bool)
+            or max_frame_bytes < 1024
+        ):
+            raise ValueError("Camera frame limit must be at least 1024 bytes")
+        self.device = device
+        self.camera_id = camera_id
+        self.timeout_seconds = float(timeout_seconds)
+        self.max_frame_bytes = max_frame_bytes
+        self.command = (
+            "v4l2-ctl",
+            "--silent",
+            f"--device={device}",
+            f"--set-fmt-video=width={width},height={height},pixelformat=MJPG",
+            f"--set-parm={fps}",
+            "--stream-mmap=4",
+            f"--stream-skip={warmup_frames}",
+            "--stream-count=1",
+            "--stream-to=-",
+        )
+        self._lock = RLock()
+
+    def capture(self) -> CameraFrame:
+        try:
+            with self._lock:
+                result = subprocess.run(
+                    self.command,
+                    check=True,
+                    capture_output=True,
+                    timeout=self.timeout_seconds,
+                )
+        except FileNotFoundError as exc:
+            raise RuntimeError("v4l2-ctl is not installed on this Raspberry Pi") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("V4L2 camera capture timed out") from exc
+        except subprocess.CalledProcessError as exc:
+            detail = exc.stderr.decode(errors="replace")[-1000:]
+            raise RuntimeError(f"V4L2 camera capture failed: {detail}") from exc
+        data = result.stdout
+        if len(data) > self.max_frame_bytes:
+            raise RuntimeError("V4L2 camera frame exceeded its configured byte limit")
+        if not data.startswith(b"\xff\xd8\xff"):
+            raise RuntimeError("V4L2 camera did not return a JPEG frame")
+        if not data.endswith(b"\xff\xd9"):
+            data += b"\xff\xd9"
+        return CameraFrame(self.camera_id, data, time())
+
+
 class LanCameraSource:
-    """Capture JPEG frames from the authenticated laptop camera service."""
+    """Capture JPEG frames from an authenticated camera service on the LAN."""
 
     def __init__(
         self,
@@ -597,6 +696,7 @@ class LanCameraSource:
         camera_id: str = "co6-usb",
         timeout_seconds: float = 5.0,
         max_response_bytes: int = 4 * 1024 * 1024,
+        rotation_degrees: int = 0,
     ) -> None:
         if not isinstance(url, str) or not url.startswith(("http://", "https://")):
             raise ValueError("LAN camera URL must use http:// or https://")
@@ -617,11 +717,14 @@ class LanCameraSource:
             or max_response_bytes < 1024
         ):
             raise ValueError("LAN camera response limit must be at least 1024 bytes")
+        if rotation_degrees not in (0, 90, 180, 270):
+            raise ValueError("rotation_degrees must be 0, 90, 180, or 270")
         self.url = url
         self.token = token
         self.camera_id = camera_id
         self.timeout_seconds = float(timeout_seconds)
         self.max_response_bytes = max_response_bytes
+        self.rotation_degrees = rotation_degrees
 
     def capture(self) -> CameraFrame:
         request = urllib.request.Request(
@@ -633,11 +736,11 @@ class LanCameraSource:
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
                 raw = response.read(self.max_response_bytes + 1)
         except urllib.error.HTTPError as exc:
-            raise RuntimeError(f"Laptop camera service returned HTTP {exc.code}") from exc
+            raise RuntimeError(f"LAN camera service returned HTTP {exc.code}") from exc
         except urllib.error.URLError as exc:
-            raise RuntimeError(f"Cannot reach laptop camera service: {exc.reason}") from exc
+            raise RuntimeError(f"Cannot reach LAN camera service: {exc.reason}") from exc
         if len(raw) > self.max_response_bytes:
-            raise RuntimeError("Laptop camera response exceeded its configured byte limit")
+            raise RuntimeError("LAN camera response exceeded its configured byte limit")
         try:
             payload = json.loads(raw)
             encoded = payload["data_base64"]
@@ -646,11 +749,22 @@ class LanCameraSource:
             response_camera_id = payload["camera_id"]
             data = base64.b64decode(encoded, validate=True)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise RuntimeError("Laptop camera returned an invalid frame contract") from exc
+            raise RuntimeError("LAN camera returned an invalid frame contract") from exc
         if response_camera_id != self.camera_id:
-            raise RuntimeError("Laptop camera identity does not match the configured camera")
+            raise RuntimeError("LAN camera identity does not match the configured camera")
         if media_type != "image/jpeg" or not data.startswith(b"\xff\xd8\xff"):
-            raise RuntimeError("Laptop camera did not return a valid JPEG frame")
+            raise RuntimeError("LAN camera did not return a valid JPEG frame")
+        if self.rotation_degrees:
+            from PIL import Image
+
+            with Image.open(BytesIO(data)) as source:
+                rotated = source.convert("RGB").rotate(
+                    self.rotation_degrees,
+                    expand=True,
+                )
+                output = BytesIO()
+                rotated.save(output, format="JPEG", quality=90)
+                data = output.getvalue()
         return CameraFrame(self.camera_id, data, captured_at, media_type)
 
 
@@ -729,6 +843,97 @@ class AlsaCommandRecorder:
         if len(result.stdout) <= 44:
             raise RuntimeError("Microphone recording returned an empty WAV file")
         return result.stdout
+
+
+class FfmpegDshowCommandRecorder:
+    """Record bounded PCM WAV commands from a Windows DirectShow microphone."""
+
+    def __init__(
+        self,
+        device: str,
+        *,
+        sample_rate_hz: int = 16_000,
+        channels: int = 1,
+        timeout_margin_seconds: float = 3.0,
+        executable: str = "ffmpeg",
+    ) -> None:
+        if not isinstance(device, str) or not device.strip():
+            raise ValueError("DirectShow microphone device must be non-empty")
+        if (
+            not isinstance(sample_rate_hz, int)
+            or isinstance(sample_rate_hz, bool)
+            or not 8_000 <= sample_rate_hz <= 48_000
+        ):
+            raise ValueError("Audio sample rate must be an integer in [8000, 48000]")
+        if channels not in (1, 2):
+            raise ValueError("Audio channels must be 1 or 2")
+        if (
+            not isinstance(timeout_margin_seconds, (int, float))
+            or isinstance(timeout_margin_seconds, bool)
+            or not math.isfinite(timeout_margin_seconds)
+            or timeout_margin_seconds <= 0
+        ):
+            raise ValueError("Audio timeout margin must be finite and positive")
+        if not isinstance(executable, str) or not executable.strip():
+            raise ValueError("FFmpeg executable must be non-empty")
+        self.device = device.strip()
+        self.sample_rate_hz = sample_rate_hz
+        self.channels = channels
+        self.timeout_margin_seconds = float(timeout_margin_seconds)
+        self.executable = executable.strip()
+
+    def record(self, duration_seconds: int) -> bytes:
+        if (
+            not isinstance(duration_seconds, int)
+            or isinstance(duration_seconds, bool)
+            or not 1 <= duration_seconds <= 30
+        ):
+            raise ValueError("Command recording duration must be an integer in [1, 30]")
+        command = [
+            self.executable,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "dshow",
+            "-i",
+            f"audio={self.device}",
+            "-t",
+            str(duration_seconds),
+            "-ac",
+            str(self.channels),
+            "-ar",
+            str(self.sample_rate_hz),
+            "-c:a",
+            "pcm_s16le",
+            "-f",
+            "s16le",
+            "pipe:1",
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                timeout=duration_seconds + self.timeout_margin_seconds,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("FFmpeg is not installed or is not on PATH") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Laptop microphone recording exceeded its time limit") from exc
+        except subprocess.CalledProcessError as exc:
+            detail = exc.stderr.decode(errors="replace")[-1000:]
+            raise RuntimeError(f"Laptop microphone recording failed: {detail}") from exc
+        pcm = result.stdout
+        if len(pcm) < self.channels * 2 or len(pcm) % (self.channels * 2):
+            raise RuntimeError("Laptop microphone did not return valid 16-bit PCM audio")
+        output = BytesIO()
+        with wave.open(output, "wb") as wav:
+            wav.setnchannels(self.channels)
+            wav.setsampwidth(2)
+            wav.setframerate(self.sample_rate_hz)
+            wav.writeframes(pcm)
+        return output.getvalue()
 
 
 class SimulatedArmDriver:

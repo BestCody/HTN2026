@@ -12,7 +12,7 @@ from moira.episode_dataset import (
 )
 from moira.robot_config import RobotModel
 
-MODEL = Path("robot_models/four_dof_desktop_arm/model.json")
+MODEL = Path("robot_models/four_dof_desktop_arm/physical_three_actuator_model.json")
 
 
 def _model():
@@ -80,7 +80,7 @@ def test_episode_dataset_requires_complete_lineage_and_publishes_atomically(tmp_
         camera_path,
         created_at="2026-09-19T18:30:00-04:00",
     )
-    assert manifest["robot_model_id"] == "four-dof-desktop-arm-v1"
+    assert manifest["robot_model_id"] == "three-actuator-desktop-arm-v2"
 
     with EpisodeRecorder(
         root,
@@ -92,8 +92,8 @@ def test_episode_dataset_requires_complete_lineage_and_publishes_atomically(tmp_
         recorder.add_frame("co6-usb", 100, b"jpeg")
         recorder.add_transition(
             101,
-            {"joint_positions_rad": [0, 0, 0], "gripper_width_m": 0.04},
-            {"target_joint_positions_rad": [0.1, 0, 0]},
+            {"joint_positions_rad": [0, 0], "gripper_width_m": 0.04},
+            {"target_joint_positions_rad": [0.1, 0]},
         )
         final = recorder.complete(
             completed_at="2026-09-19T18:31:02-04:00",

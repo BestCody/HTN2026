@@ -1,203 +1,472 @@
-﻿# MoIRA Physical AI Router
+# Charlie
 
-This repository is an OpenRouter-style gateway for physical AI. The RTX laptop
-is the robot's brain: it captures the CO6 webcam and microphone, stores personal
-memory, routes exact specialist contracts, plans actions, and evaluates parallel
-2-3 second predictions. Baseten can host those specialists independently. The
-Raspberry Pi 4B is the robot computer. It has no cloud credentials and accepts
-only authenticated, bounded motion chunks that match its calibrated robot model.
-It independently enforces command identity, timing, joint and gripper envelopes,
-owns the PCA9685, and keeps the emergency stop local to the motors.
+Charlie is a safety-first physical AI system that turns a spoken request into a
+grounded, simulated, and locally validated robot action. Instead of asking one
+large model to do everything, Charlie coordinates specialized models for
+speech, vision, intent grounding, planning, manipulation, dynamics, reward,
+and outcome verification.
 
-The production component path does not substitute a different model after a
-router or inference failure. It stops before motor execution and reports the
-error.
+Baseten is Charlie's inference fabric. It hosts the semantic router and task
+planner as Chains, provides the multimodal Model API used for scene and language
+reasoning, and gives each custom specialist an independent deployment boundary.
+The RTX laptop composes those services and keeps state; the Raspberry Pi owns
+the camera and the final motor-control boundary. A cloud response can propose or
+score an action, but it can never directly drive a servo.
 
-A Python implementation of [MoIRA: Modular Instruction Routing Architecture for
-Multi-Task Robotics](https://arxiv.org/html/2507.01843v2) (arXiv:2507.01843v2).
-This repository implements the routing and serving method and provides a
-specialist-training interface. It does **not** bundle trained robot policies or
-claim to reproduce the paper's benchmark results.
+Say **"Hey Charlie"** to begin a live voice interaction.
 
-The core package has one small configuration dependency. Camera, hardware,
-pretrained routing, and LoRA training are optional installations.
+> The public system is Charlie. The Python package, CLI command, and existing
+> `MOIRA_*` environment variables retain their original names for compatibility.
 
-## GPU training environment
+## How Charlie is put together
 
-Windows training uses a separate `.venv-training` environment so CUDA and
-robot-learning dependencies do not enlarge or destabilize the Raspberry Pi
-runtime. Create or repair it from the repository root:
+```mermaid
+flowchart TB
+    USER["User: Hey Charlie..."] --> MIC[Microphone]
+    MIC --> STT[Whisper speech-to-text]
+    CAM[CO6 webcam] --> PI["Raspberry Pi<br/>camera + robot service"]
+    PI -->|authenticated frame| ORCH
+    STT --> ORCH["Charlie on RTX laptop<br/>orchestration + memory"]
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\setup_training_env.ps1
+    subgraph BT[Baseten]
+        ROUTER["MiniLM Router Chain"]
+        VISION["Multimodal scene perception"]
+        GROUND["Scene-grounded command understanding"]
+        PLANNER["Task Planner Chain"]
+        SPECIALISTS["Independently deployed specialists"]
+    end
+
+    ORCH --> VISION
+    ORCH --> GROUND
+    ORCH --> PLANNER
+    ORCH -->|task text + compatible IDs only| ROUTER
+    ROUTER -->|one component ID| ORCH
+    ORCH --> SPECIALISTS
+
+    SPECIALISTS --> FUTURES["Parallel 2-3 second future predictions"]
+    FUTURES --> SAFE["Local IK + trajectory + collision + safety"]
+    SAFE --> CONFIRM["Plan preview + fresh user confirmation"]
+    CONFIRM -->|authenticated bounded action chunks| PI
+    PI --> LIMITS["Identity + timing + servo envelope checks"]
+    LIMITS --> PCA[PCA9685]
+    PCA --> ARM[Fixed-elbow desktop arm]
+    ARM --> VERIFY[Post-action observation + feedback]
+    VERIFY --> ORCH
+    ORCH --> TTS[Kokoro speech]
+    TTS --> USER
 ```
 
-The script installs the verified CUDA 12.8 PyTorch and torchvision builds,
-OpenCV, MuJoCo, Gymnasium, LeRobot with its dataset stack, and a compatible
-FFmpeg 8 shared build for TorchCodec. It finishes by running real CUDA matrix
-multiplication, OpenCV image encoding, MuJoCo stepping, a Gymnasium environment,
-LeRobot ACT/CLI loading, TorchCodec loading, and a MoIRA import. Run the verifier
-directly with:
+The split is intentional:
+
+- **Baseten runs model inference.** Models can be deployed, scaled, and updated
+  independently without moving credentials or large runtimes onto the robot.
+- **The RTX laptop runs Charlie.** It captures voice, holds personal memory,
+  applies the component allow-list, calls Baseten, validates every typed
+  response, simulates candidates, journals runs, and prepares bounded motion.
+- **The Raspberry Pi owns the hardware boundary.** It serves camera frames,
+  revalidates every motion request, owns the PCA9685, and keeps stop handling
+  next to the motors.
+
+If the camera, router, network, response schema, specialist, or safety check
+fails, the production path stops. Charlie does not silently swap in a different
+model and continue toward physical execution.
+
+## What Baseten does for Charlie
+
+Baseten is more than a single model endpoint in this system. Charlie uses three
+parts of the platform for different jobs.
+
+### 1. The semantic Router Chain
+
+The laptop first filters the component registry by exact capability, schema,
+runtime, and safety role. It then sends the current task text and only those
+compatible component IDs to the Baseten Router Chain.
+
+The Chain packages Charlie's fine-tuned MiniLM encoder and specialist metadata.
+For a real choice between multiple compatible specialists, it embeds the task,
+compares it with each specialist's normalized metadata prototypes, and returns
+the strongest component ID plus scores. If there is only one compatible
+provider, the request is resolved as a contract singleton; there is no semantic
+guess to make.
+
+The router never receives motor authority and never returns a URL, secret, or
+command. Charlie checks the returned ID against the original allow-list before
+looking up the endpoint in local configuration.
+
+The deployable Chain is in [deploy/baseten_router](deploy/baseten_router), and
+the specialist catalog is in
+[examples/physical_ai_specialists.json](examples/physical_ai_specialists.json).
+
+### 2. The physical Task Planner Chain
+
+The Baseten Planner Chain has two typed responsibilities:
+
+1. Create a small set of candidate plans from the grounded intent, observed
+   scene, grasp poses, installed arms, and user constraints.
+2. Select only from the exact candidates Charlie has already validated and
+   simulated.
+
+The planner cannot invent a new final plan after simulation. Charlie compares
+the selected candidate and simulation payload structurally with the originals.
+The Chain implementation and active arm profile live in
+[deploy/baseten_planner](deploy/baseten_planner).
+
+### 3. Model API and dedicated model deployments
+
+The active runtime uses Baseten's OpenAI-compatible Model API with
+`zai-org/GLM-5.3-Flash` for two structured reasoning stages:
+
+- **Scene perception:** turns calibrated camera evidence into typed objects,
+  positions, confidence values, surfaces, and hazards.
+- **Voice grounding:** maps the transcript onto object IDs that actually exist
+  in the perceived scene, extracting the action, object roles, and constraints.
+
+Both calls request strict JSON structures. Charlie decodes them into internal
+types and rejects invented object IDs, malformed outputs, missing prediction
+horizons, mismatched plan IDs, and other contract violations.
+
+The repository also contains Truss packages for dedicated Baseten deployments:
+
+| Package | Role | Model |
+| --- | --- | --- |
+| [deploy/baseten_vision](deploy/baseten_vision) | Calibrated open-vocabulary detection | Grounding DINO Tiny |
+| [deploy/baseten_voice_nlp](deploy/baseten_voice_nlp) | Scene-grounded command parsing | Qwen 2.5 3B Instruct |
+| [deploy/baseten_whisper](deploy/baseten_whisper) | Speech transcription | Whisper Large V3 Turbo |
+| [deploy/baseten_tts](deploy/baseten_tts) | Spoken confirmations and status | Kokoro-82M |
+
+These deployment packages use the same typed contracts as the active runtime,
+so a component can move from a laptop service to Baseten without changing the
+orchestration logic. Transport is configuration, not task logic.
+
+### Current service placement
+
+[config/pi4_runtime.json](config/pi4_runtime.json) is the source of truth for
+the current topology. It contains endpoint variable names and component
+transports, but no credentials.
+
+| Capability | Current placement |
+| --- | --- |
+| Semantic specialist routing | Baseten Router Chain |
+| Scene perception | Baseten Model API |
+| Scene-grounded command understanding | Baseten Model API |
+| Candidate generation and final selection | Baseten Planner Chain |
+| Whisper STT and Kokoro TTS | RTX laptop JSON services |
+| Grasp, waypoint, dynamics, rigid/contact world, reward, outcome | Learned waypoint/dynamics checkpoints plus explicit local model-based specialists in the current motor-locked profile; remote endpoint contracts are already defined |
+| Personal memory and run journal | Laptop SQLite and JSONL |
+| IK, trajectory generation, collision checks, hard safety | Laptop, loaded from the validated robot model |
+| Camera, request validation, emergency stop, PWM | Raspberry Pi |
+
+Logical IDs such as `baseten-waypoint-policy` are stable component identities.
+The runtime configuration determines whether that component is backed by a
+Baseten deployment, another authenticated JSON service, or an explicitly
+declared local integration implementation. Judge-facing output translates these
+IDs into role names such as **Movement Specialist**, **Vision Specialist**,
+**Task Planning Specialist**, and **Motion Prediction Specialist**. The internal
+IDs appear only as secondary diagnostics.
+
+## What happens after “Hey Charlie”
+
+One request moves through the following bounded workflow:
+
+1. **Capture and transcribe.** The laptop records a short command and Whisper
+   produces the transcript. A local stop phrase bypasses the remaining cloud
+   workflow and latches the motor stop.
+2. **Observe the workspace.** Charlie requests a timestamped JPEG from the
+   authenticated Pi camera endpoint and asks the Baseten vision model for a
+   structured world state.
+3. **Recall personal context.** Laptop SQLite returns preferences,
+   accommodations, recent comments, and previously measured object facts.
+   Memory may shape a plan, but it cannot silently supply an omitted target.
+4. **Ground the command.** The Baseten language model binds words such as “the
+   red block” and “the tray” to object IDs from the current scene. If a required
+   role is ambiguous or missing, Charlie asks a spoken clarification and waits.
+5. **Generate grasps and candidates.** The grasp specialist proposes bounded
+   poses. The Planner Chain creates a small set of complete candidate plans
+   supported by the installed arm configuration.
+6. **Route each candidate.** The typed registry builds the compatible
+   manipulation pool. The Router Chain chooses the waypoint, pour, insert,
+   lid-opening, handover, or bimanual policy that best matches the candidate.
+7. **Validate motion locally.** Charlie converts policy chunks into robot-model
+   IK, a timed trajectory, and a collision report. Infeasible candidates remain
+   visible in the comparison but cannot be selected for execution.
+8. **Predict futures in parallel.** Each viable candidate is evaluated by
+   forward dynamics and the relevant rigid, contact, bimanual, deformable, or
+   human-motion world models over the configured 2-3 second horizon.
+9. **Score and gate.** A reward specialist scores task progress. Local safety
+   fuses collision clearance, predicted risk, tactile slip, grasp stability,
+   uncertainty, and the robot's calibrated limits. If every candidate is unsafe,
+   the request ends before control.
+10. **Select and explain.** The Planner Chain may choose only one of the supplied
+    safe simulations. Charlie reads back the grounded request and selected plan.
+11. **Confirm.** Physical execution requires a fresh “yes” bound to the exact
+    grounded intent, observed targets, and candidate ID. A correction triggers
+    grounding, routing, planning, and prediction again. If the new result
+    differs, the old confirmation is invalid.
+12. **Reobserve and execute.** Charlie captures another frame immediately before
+    motion and between action steps. Moved targets, missing objects, or new
+    hazards stop the run. The Pi accepts only authenticated, non-duplicate,
+    time-bounded chunks tied to the expected robot model and plan.
+13. **Verify and learn.** A post-action frame and control telemetry feed outcome
+    verification, failure classification, load estimation, and per-model
+    prediction error. The result is journaled and useful facts are written back
+    to personal memory.
+14. **Respond.** Kokoro speaks the completion, failure, clarification, or safety
+    message.
+
+Camera and audio bytes are not stored in the run journal. The journal keeps
+their sizes and capture metadata alongside the transcript, routing decisions,
+candidates, simulations, selected plan, telemetry, outcome, and feedback.
+
+## Typed contracts keep models interchangeable
+
+Charlie never routes arbitrary JSON between arbitrary models. Every component
+declares a layer and one or more exact capabilities, for example:
+
+| Stage | Capabilities |
+| --- | --- |
+| Perception and voice | `perception.scene`, `voice.transcribe`, `voice.ground`, `voice.synthesize` |
+| Planning and grasping | `planning.candidates`, `planning.select`, `grasp.pose_6d` |
+| Manipulation | `manipulation.skill.waypoint`, `.pour`, `.insert`, `.open_lid`, `.handover`, `manipulation.bimanual` |
+| Local motion | `kinematics.inverse`, `motion.trajectory`, `motion.collision_check` |
+| Prediction | `dynamics.predict`, `world.rigid_dynamics`, `world.grasp_contact`, `world.bimanual_coordination`, `world.deformable_dynamics`, `world.human_motion` |
+| Choice and safety | `reward.task_progress`, `safety.risk` |
+| Control and feedback | `control.single_arm`, `outcome.verify`, `failure.classify`, `load.estimate`, `feedback.prediction_error`, `feedback.learn` |
+
+The allow-list is
+[examples/pi4_components.json](examples/pi4_components.json). Remote payloads
+are decoded by `moira.contracts.decode_physical_response` before another stage
+can consume them. The registry also marks local-authority capabilities, so a
+remote component cannot be selected for motor control, tactile enforcement,
+IK, collision checking, or other protected operations.
+
+## Safety and motor authority
+
+Charlie's model layer is advisory; motor authority is deliberately local.
+
+- The active robot model supplies joint geometry, limits, gripper bounds,
+  channel assignments, timing, and calibration. Driver code does not invent
+  missing measurements.
+- Plan-only runs cannot command hardware.
+- Physical runs require current robot state, an exact-plan confirmation, fresh
+  camera observations, and a motion-ready robot model.
+- The Pi verifies robot identity, model digest, plan/chunk binding, timestamps,
+  request uniqueness, joint limits, gripper limits, and the motion-enabled flag.
+- The PCA9685 is opened lazily only after an authenticated execution request.
+- A local stop phrase runs alongside authorized movement. Stop is latched until
+  the operator checks the workspace and restarts the runtime.
+- Network inference is never placed inside the servo-rate loop.
+
+The current physical profile is a **single fixed-elbow arm**: MG996R base yaw on
+channel 0, MG996R shoulder on channel 1, and SG90 gripper on channel 2. Channel
+3 is unused and the second arm is not installed. The checked-in model is still
+**motion-locked** because physical limits, payload, collision clearance,
+gripper force/aperture, actuator mapping, supply compatibility, and stop-path
+checks are not complete. Charlie reports those missing measurements instead of
+substituting estimates.
+
+Inspect readiness at any time:
 
 ```powershell
-.\.venv-training\Scripts\python.exe tools\verify_training_env.py
+.\.venv\Scripts\python.exe -m moira robot-model-check `
+  robot_models\four_dof_desktop_arm\physical_three_actuator_model.json `
+  --verify-source
+
+.\.venv\Scripts\python.exe -m moira physical-preflight `
+  --config config\pi4_runtime.json
 ```
 
-## Software-only quick start
+Arm calibration, CAD validation, MuJoCo generation, and deployment steps are in
+[the arm guide](robot_models/four_dof_desktop_arm/README.md).
 
-On the laptop, run the deterministic non-actuating integration path from the
-repository root:
+## Quick start
 
-```bash
+### 1. Run Charlie without hardware
+
+From the repository root on Windows:
+
+```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[camera]"
 .\.venv\Scripts\python.exe -m moira physical-demo
 ```
 
-`physical-demo` exercises camera objects, persistent personal context, a
-2.5-second structured prediction horizon, grasp generation, single-arm and
-bimanual policies, four world-model specialists, reward/risk scoring, local IK,
-validated action chunks, tactile sensing, execution feedback, and voice output
-without commanding hardware. See the
-[Pi 4B + Baseten architecture](docs/pi4-baseten-architecture.md) for laptop/Pi
-wiring and deployment contracts. The Pi installation is intentionally smaller
-and is documented under **Pi bring-up** in that guide.
+`physical-demo` is deterministic and non-actuating. It exercises the layered
+workflow, candidate generation, short-horizon prediction, plan selection,
+feedback, memory, and voice-output contracts without sending motor commands.
 
-## Live physical workflow
+### 2. Configure Baseten
 
-[`config/pi4_runtime.json`](config/pi4_runtime.json) is the configuration map
-for the active robot model, component manifest, persistent personal memory,
-run journal, router, and every independent Baseten specialist. It contains no
-credentials or robot measurements. Endpoint IDs are read from the ignored
-`.env` file, while joint geometry and servo limits come only from the exported
-robot model.
-
-Check the complete path at any time:
-
-```powershell
-.\.venv\Scripts\python.exe -m moira physical-preflight
-```
-
-The report names every missing CAD, calibration, camera, router, and specialist
-input without printing the Baseten API key. After those inputs are ready, run a
-plan-only task from a prerecorded command. `MOIRA_CAMERA_DEVICE` must be the
-OpenCV device index or path verified for the CO6; the runtime never assumes
-index 0 because that is commonly the laptop's integrated camera:
-
-```powershell
-.\.venv\Scripts\python.exe -m moira physical-run `
-  --audio .\command.wav `
-  --workspace .\workspace.json
-```
-
-Add `--execute --robot-state robot-state.json` only after the exported robot
-model and PCA9685 calibration pass preflight. Physical execution requires a
-timestamped state observation and a post-action camera capture. The laptop does
-not send a robot command during plan-only requests, and the Pi opens I2C lazily
-only after motion has been explicitly enabled.
-
-Each attempt is appended to `outputs/physical_runs.jsonl`. A successful record
-contains the transcript, recalled personal context, exact routed specialists,
-all candidate plans, parallel 2â€“3 second predictions, selected plan, control
-telemetry, before/after scene states, verified outcome, per-model prediction
-error, and feedback. Camera and audio payload bytes are excluded from the
-journal; their sizes and capture metadata are retained.
-
-The active SolidWorks arm is tracked in
-[`robot_models/four_dof_desktop_arm/model.json`](robot_models/four_dof_desktop_arm/model.json).
-It uses MG996R servos at the base and shoulder and SG90 servos at the elbow and
-end effector. The assembly, every CAD dependency, and `Robotic+Arm.3mf` are
-hash-pinned. The Fusion export now supplies the assembled five-link meshes,
-three gripper mechanism groups, Y-up coordinate frame, four analytic actuator
-axes, 154.14 mm upper-arm spacing, and 100.10 mm forearm spacing. MuJoCo 3.13
-compiles the CAD-derived kinematic model with counter-rotating gripper fingers
-and passes all four commanded parent/child motion checks. The configuration remains
-the single source for geometry, bimanual mounting, gripper limits, joint speed,
-control frequency, clearance, payload, safety thresholds, and controller
-timing. Values from the retired robot were removed; unmeasured physical values
-remain `null` and prevent motor control from starting. Run `moira
-robot-model-check robot_models/four_dof_desktop_arm/model.json
---verify-source` to inspect its readiness. Export, validation, and calibration
-steps are documented in
-[`robot_models/four_dof_desktop_arm/README.md`](robot_models/four_dof_desktop_arm/README.md).
-The hardware path uses one PCA9685 and the confirmed external 6 V/10 A supply.
-Arm #1 is installed with base, shoulder, elbow, and gripper on channels 0, 1,
-2, and 3. Pulse endpoints and SG90 voltage compatibility remain unconfirmed.
-These values live in the robot configuration rather than driver code. Physical
-execution remains blocked until Arm #1 is calibrated; dual-arm startup also
-requires the second installation.
-
-The older `demo` routes a toy instruction to a policy and completes a three-step
-line world. Its manually defined encoder is explicitly a plumbing fixture, not
-MiniLM and not a robot benchmark.
-
-## Local Baseten credentials
-
-Copy `.env.example` to `.env` and place the Baseten key in the ignored local
-file:
+Copy the environment template and fill in the local, ignored file:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
+At minimum, the cloud-backed workflow uses:
+
 ```dotenv
 BASETEN_API_KEY=your-key-here
+BASETEN_ROUTER_CHAIN_ID=your-router-chain-id
+BASETEN_ROUTER_ENVIRONMENT=production
+BASETEN_VISION_MODEL_API=zai-org/GLM-5.3-Flash
+BASETEN_VOICE_NLP_MODEL_API=zai-org/GLM-5.3-Flash
+BASETEN_PLANNER_CHAIN_ID=your-planner-chain-id
+BASETEN_PLANNER_ENVIRONMENT=production
 ```
 
-Cloud clients load `.env` from the current working directory. An existing
-`BASETEN_API_KEY` process environment variable takes precedence. Set
-`MOIRA_ENV_FILE` when launching outside the repository and the secret file is
-stored elsewhere. Never commit `.env`.
+The process environment takes precedence over `.env`. If Charlie is launched
+outside the repository, set `MOIRA_ENV_FILE` to the secret file's location.
+Never commit `.env`, and never copy the Baseten key onto the Pi.
 
-Inspect the configured IDs and their live Baseten deployment state without
-printing credentials or entity IDs:
+Inspect the configured deployments without printing credentials or entity IDs:
 
 ```powershell
-.\.venv\Scripts\moira.exe baseten-status
+.\.venv\Scripts\python.exe -m moira baseten-status
 ```
 
-The complete component order, readiness state, and smoke tests are in the
-[Baseten deployment runbook](docs/baseten-deployment-runbook.md).
+The status command treats `ACTIVE` and `SCALED_TO_ZERO` as healthy deployment
+states; the latter will cold-start on its next request.
 
-### Run the laptop robot services
+### 3. Start the laptop voice service
 
-The Pi is the robot computer and retains all motor authority. The RTX laptop
-runs MoIRA orchestration, the router and model clients, the CO6 webcam, Whisper
-Large V3 Turbo, and Kokoro. Install the pinned voice dependencies in the CUDA
-training environment, then start the laptop-local voice service:
+The current profile runs pinned Whisper and Kokoro models on the RTX laptop:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File tools\setup_training_env.ps1
 .\.venv-training\Scripts\python.exe -m pip install -e ".[rtx-voice]"
 .\.venv-training\Scripts\python.exe tools\run_rtx_voice_server.py `
   --host 127.0.0.1 `
   --port 8765
 ```
 
-The Pi exposes only an authenticated robot-control service. It starts locked,
-does not initialize the PCA9685, and rejects every motion request until the
-calibrated model has been deployed and `--enable-motion` is deliberately added:
+Then configure:
+
+```dotenv
+MOIRA_STT_URL=http://127.0.0.1:8765/v1/stt
+MOIRA_TTS_URL=http://127.0.0.1:8765/v1/tts
+```
+
+### 4. Run the full motor-locked showcase
+
+The judge trace shows each real route, model switch, candidate simulation,
+safety decision, and final selection:
+
+```powershell
+.\.venv-training\Scripts\python.exe tools\run_judge_demo.py --play-response
+```
+
+To demonstrate an incomplete command, clarification, correction, and safe
+replanning:
+
+```powershell
+.\.venv-training\Scripts\python.exe tools\run_judge_demo.py `
+  --human-error-demo `
+  --play-response
+```
+
+For the same cloud-backed integration as compact JSON:
+
+```powershell
+.\.venv-training\Scripts\python.exe tools\run_software_integration.py
+```
+
+These paths are intentionally non-actuating. They validate Baseten calls,
+typed planning, specialist routing, parallel predictions, selection, feedback,
+and spoken output while the physical profile remains locked.
+
+## Deploy the Baseten services
+
+Use a separate deployment environment so Truss dependencies do not affect the
+Pi or core runtime:
+
+```powershell
+py -3.12 -m venv .venv-deploy
+.\.venv-deploy\Scripts\python.exe -m pip install --upgrade pip truss==0.18.30
+.\.venv-deploy\Scripts\truss.exe login --browser
+```
+
+### Router Chain
+
+Stage the accepted checkpoint, validate the Chain, then promote it:
+
+```powershell
+.\tools\stage_router_checkpoint.ps1
+$env:PATH = (Resolve-Path .\.venv-deploy\Scripts).Path + ';' + $env:PATH
+Push-Location deploy\baseten_router
+truss.exe chains push router.py --dryrun --non-interactive
+truss.exe chains push router.py --promote --wait --non-interactive
+Pop-Location
+```
+
+Put the returned Chain ID in `BASETEN_ROUTER_CHAIN_ID`, then run:
+
+```powershell
+.\.venv\Scripts\python.exe tools\test_baseten_router.py
+```
+
+### Planner Chain
+
+The planner is independently deployable from
+[deploy/baseten_planner](deploy/baseten_planner). Store its returned Chain ID
+in `BASETEN_PLANNER_CHAIN_ID`. Keeping routing and planning separate lets the
+small semantic router scale independently from the larger physical-planning
+workload.
+
+```powershell
+Push-Location deploy\baseten_planner
+truss.exe chains push planner.py --dryrun --non-interactive
+truss.exe chains push planner.py --promote --wait --non-interactive
+Pop-Location
+```
+
+### Truss models
+
+Each model directory can be pushed on its own. For example:
+
+```powershell
+.\.venv-deploy\Scripts\truss.exe push deploy\baseten_whisper --watch
+```
+
+Store deployment IDs and environments only in `.env`. Development model URLs
+use `/development/predict`; named environments use
+`/environments/<name>/predict`. Chains use the corresponding `run_remote`
+paths. Charlie's Baseten client constructs and validates those URLs rather than
+accepting endpoint URLs from model output.
+
+The complete order, readiness notes, and smoke tests are in the
+[Baseten deployment runbook](docs/baseten-deployment-runbook.md).
+
+## Connect the Raspberry Pi
+
+The Pi installs only the core and hardware dependencies. It does not need
+router weights, model runtimes, or Baseten credentials.
 
 ```bash
-MOIRA_ROBOT_TOKEN='replace-with-the-shared-secret' \
+python3 -m venv .venv
+./.venv/bin/python -m pip install -e ".[hardware]"
+./.venv/bin/moira pi-check --strict
 ./.venv/bin/moira-pi-controller \
   --host 0.0.0.0 \
   --port 8770 \
-  --model /home/client/moira-controller/app/robot_models/four_dof_desktop_arm/model.json
+  --model robot_models/four_dof_desktop_arm/physical_three_actuator_model.json \
+  --camera-device /dev/v4l/by-id/usb-GENERAL_GENERAL_WEBCAM-video-index0 \
+  --camera-id co6-usb
 ```
 
-Put the Pi and laptop on the same Wi-Fi and set the ignored laptop `.env`:
+This starts motion locked and exposes authenticated health, camera, control,
+and stop endpoints. Add `--enable-motion` only after the deployed robot model
+passes every readiness check; the flag never bypasses model validation.
+
+On the laptop, configure the authenticated link:
 
 ```dotenv
 MOIRA_ROBOT_URL=http://RASPBERRY_PI_IPV4:8770
-MOIRA_ROBOT_TOKEN=the-same-shared-secret
-MOIRA_STT_URL=http://127.0.0.1:8765/v1/stt
-MOIRA_TTS_URL=http://127.0.0.1:8765/v1/tts
-MOIRA_CAMERA_DEVICE=the-verified-co6-opencv-index-or-path
+MOIRA_ROBOT_TOKEN=the-same-strong-shared-secret
+MOIRA_CAMERA_URL=http://RASPBERRY_PI_IPV4:8770/v1/camera
 ```
 
-Run the complete brain on the laptop. The Pi revalidates robot identity,
-geometry digest, plan/chunk binding, timing, joint limits, gripper limits, and
-request uniqueness before local PWM is possible:
+Once `physical-preflight` reports ready, run a plan-only request through the
+production configuration:
 
 ```powershell
 .\.venv-training\Scripts\python.exe -m moira physical-run `
@@ -206,421 +475,58 @@ request uniqueness before local PWM is possible:
   --camera-id co6-usb
 ```
 
-The checkpoints and revisions are pinned in `src/moira/rtx_voice.py`; CUDA is
-mandatory and CPU substitution is rejected. Test a command recording through
-the same LAN contract used by the Pi:
+Do not add `--execute` until the robot model is motion-ready and a current
+`--robot-state` file is available. Physical execution also requires the
+human-aware confirmation flow, pre-action observation, and post-action
+verification.
 
-```powershell
-.\.venv-training\Scripts\python.exe tools\test_baseten_stt.py path\to\command.wav
-```
+For the laptop/Pi trust boundary and request contracts, see the
+[Pi and Baseten architecture guide](docs/pi4-baseten-architecture.md).
 
-Vision and scene-grounded language use the GLM-5.3-Flash Baseten Model API.
-The frozen MiniLM Router and deterministic Planner remain Baseten Chains.
-For a judge-facing run, print every actual specialist route, model switch,
-candidate simulation, score, and final selection as the pipeline executes. The
-presentation includes animated model spinners, routing-decision reveals,
-physics score bars, safety callouts, and a final candidate comparison table:
+## Persistent state and observability
 
-```powershell
-.\.venv-training\Scripts\python.exe tools\run_judge_demo.py --play-response
-```
+Charlie records two kinds of durable state:
 
-To demonstrate recovery from an incomplete human command, run:
+- `outputs/personal_memory.db` stores preferences, accommodations, measured
+  object facts, and feedback for later requests.
+- `outputs/physical_runs.jsonl` stores one structured record per attempt,
+  including failures before motor execution.
 
-```powershell
-.\.venv-training\Scripts\python.exe tools\run_judge_demo.py --human-error-demo --play-response
-```
+The pipeline also emits bounded events for route selection, component latency,
+perception, grounding, candidate creation, simulations, plan selection, scene
+revalidation, control, outcome verification, and feedback. The terminal
+showcase renders these events as the request runs; they can also feed another
+observability sink without changing component logic.
 
-This path intentionally says only â€œMove the red block.â€ The robot asks for the
-missing destination, accepts a second spoken answer, carries the active dialogue
-into scene grounding, replans, and displays the selected specialists and futures.
-Motor output remains locked. Stored personal comments may adjust preferences and
-accommodations, but they cannot silently supply a target that the user did not
-name in the current conversation.
+## Repository map
 
-Maximize the PowerShell or Windows Terminal window before starting so the
-presentation panels stay on one line.
-
-The command ends by playing the Kokoro response and saving it to
-`outputs/judge_demo_response.wav`. The trace clearly labels this
-pre-calibration profile as motor-locked; it cannot send PWM commands. It uses
-the controlled scene and spoken-command fixtures from
-`config/software_integration.json` so the judge demonstration is reproducible.
-Run it once a few minutes before presenting to warm the Router and Planner
-Chains. The verified warm run completes in about ten seconds; a scaled-down
-cloud Chain can take substantially longer on its first request.
-
-To run the same complete non-actuating integration as a compact JSON check:
-
-```powershell
-.\.venv-training\Scripts\python.exe tools\run_software_integration.py
-```
-
-This profile uses explicit, nonphysical assumptions for untrained robot models
-and can never authorize motor execution. A pass proves service composition,
-routing, typed planning, parallel 2.5-second predictions, selection, planned
-outcome handling, feedback journaling, and spoken response generation.
-
-Physical execution uses a separate human-aware session. It previews the plan,
-echoes the interpreted command, and requires a fresh `yes` bound to the exact
-grounded intent and candidate. Corrections invalidate the pending plan and run
-grounding, routing, planning, and prediction again. If fresh planning differs
-from what was confirmed, execution is blocked and a new confirmation is
-required. A local stop phrase bypasses cloud inference, stops every loaded arm,
-and latches the PCA9685 controller. During an authorized Pi execution, a
-parallel one-second microphone monitor listens for stop language and fails
-closed if its recorder or STT component fails. Immediately before motor
-authority, and again between action steps, fresh camera observations block
-missing or unexpectedly moved targets and newly observed hazards.
-
-## General semantic routing with typed compatibility
-
-MoIRA remains the general task-to-specialist router described by the paper.
-Every specialist declares short and abstract natural-language descriptions plus
-representative routing phrases. The frozen MiniLM router embeds the current
-request and ranks each expert by its best metadata-prototype similarity. Adding
-or replacing an expert does not require a route-table edit or router training.
-`examples/physical_ai_specialists.json` is the current catalog.
-
-`ComponentRegistry` is the robot-side compatibility and authority gate. Exact
-capabilities reject components with the wrong request/response schema, runtime,
-or safety role before semantic routing. This gate does not decide which
-compatible specialist best matches the task. The Baseten Chain receives only
-allow-listed compatible IDs and performs the paper-style semantic choice. If a
-contract has one provider, there is no choice to infer and that provider is
-selected directly.
-
-The layered workflow composes specialists by making several typed routing
-requests: speech, perception, planning, manipulation policy, short-horizon
-world prediction, reward, and verification. This orchestration is an extension
-around MoIRA; the routing rule itself remains architecture-agnostic and frozen.
-The full flow is implemented by `PhysicalAI`, while local collision checks,
-hard safety, and motor control retain authority on the Pi.
-
-On the authored routing test, the unrestricted 20-expert pool scored 19/20. The
-actual typed world-model pool scored 6/6. A raw-instruction policy
-pool scored 5/6, while the production-shaped query containing the grounded goal,
-planner action, arms, and target scored 6/6. These are small repository
-regressions, not a robotics benchmark; run
-`tools/evaluate_physical_router.py` after every catalog change.
-
-The physical path uses these exact capability groups:
-
-| Stage | Capabilities |
+| Path | Purpose |
 | --- | --- |
-| Scene and language | `perception.scene`, `voice.transcribe`, `voice.ground` |
-| Physical grounding | `grasp.pose_6d`, `personal.recall` |
-| Task and skill policy | `planning.candidates`, `manipulation.bimanual`, `manipulation.skill.waypoint`, `.pour`, `.insert`, `.open_lid`, `.handover` |
-| Local feasibility | `kinematics.inverse`, `motion.trajectory`, `motion.collision_check` |
-| Prediction | `dynamics.predict`, `world.rigid_dynamics`, `world.grasp_contact`, `world.bimanual_coordination`, `world.deformable_dynamics`, `world.human_motion` |
-| Model-based choice | `reward.task_progress`, `safety.risk`, `planning.select` |
-| Contact and control | `tactile.contact`, `tactile.slip`, `tactile.force`, `tactile.grasp_stability`, `control.single_arm`, `control.bimanual` |
-| Learning loop | `outcome.verify`, `failure.classify`, `load.estimate`, `feedback.prediction_error`, `feedback.learn`, `personal.record` |
-
-Every candidate policy is converted to a local joint trajectory before remote
-prediction. Relevant world models predict typed future object poses, joints,
-contact forces, slip, collision probability, success, and uncertainty through
-the configured 2â€“3 second horizon. A reward model scores progress; laptop safety
-fusion rejects unsafe plans and the Pi reapplies calibrated motion envelopes
-before it can drive PWM. The task planner can select only a
-candidate that was generated, validated, predicted, and marked safe. After
-execution, predicted success is compared with the observed outcome per world
-model so calibration errors can be persisted for retraining.
-
-`src/moira/specialists.py` contains bounded analytic/state-space implementations
-for offline validation. Its generic numeric fixtures are not arm calibration.
-Production local components use `from_robot_model(...)`, and `PhysicalAI` uses
-`from_robot_model(...)`, so every physical limit comes from the validated robot
-configuration. Production neural model IDs in
-`examples/pi4_components.json` are explicit deployment placeholders and must be
-replaced with robot-specific trained endpoints. An unavailable endpoint fails
-the request; offline implementations are never used as production substitutes.
-The [robot model training audit](docs/training-audit.md) identifies every
-component that needs training, pretrained deployment, sensor data, or calibration.
-The [arm #1 training playbook](docs/training-playbook.md) defines the initial
-voice-conditioned dataset, ACT policy, short-horizon dynamics, and deployment flow.
-
-## Pretrained routers
-
-Install the desired backend, then route an instruction:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[embeddings,prompt]"
-.\.venv\Scripts\python.exe -m moira route --experts examples/physical_ai_specialists.json --interface manipulation.policy.v1 "Use both arms to carry the box."
-```
-
-The CLI and production Baseten Chain default to the frozen MiniLM prototype
-router. For physical AI, `--interface` first limits the pool by a data/schema
-contract such as `manipulation.policy.v1` or `world.predict.v1`; MiniLM then
-compares the request with each expert's description and representative phrases.
-Compatibility filtering and routing prototypes are metadata-driven and do not
-encode task-to-expert rules in application code.
-
-The default embedding model is
-[`sentence-transformers/all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
-Expert descriptions are cached, task embeddings are normalized, and the expert
-with maximum cosine similarity is selected. The scores are similarities, not
-probabilities. Registry additions, removals,
-or changed descriptions invalidate the cache automatically. MiniLM inherits its
-model's input truncation limit; keep individual descriptions short.
-
-The paper's two exact strategies remain available with `--router embedding`
-(description-only cosine argmax) and `--router prompt`. Production's
-`--router prototype` extends the embedding strategy with expert-owned example
-phrases, retaining frozen weights and add-with-metadata behavior. The repository
-also retains an explicit `--router hybrid` research extension. Production has
-no automatic fallback: an unavailable or invalid router stops the request.
-
-```powershell
-.\.venv\Scripts\python.exe -m moira route --experts examples/directional_experts.json --router embedding "Travel toward the right end of the line."
-.\.venv\Scripts\python.exe -m moira route --experts examples/directional_experts.json --router hybrid "Travel toward the right end of the line."
-```
-
-For this regression, the baseline selects `left`; hybrid selects `right` through
-`hybrid_prompt`. Output includes the original `embedding_expert_id`, embedding
-`scores`, and top-two `margin` even when the LM overrides the initial choice.
-`hybrid_embedding` indicates no LM call was needed. A single-expert registry has
-no runner-up (`margin: null`) and bypasses disambiguation.
-
-The margin threshold is an implementation heuristic, not a calibrated confidence
-or a paper hyperparameter. It does not guarantee that larger-margin predictions
-are correct. Validate it on representative tasks before choosing a deployment
-threshold. `HybridRouter` combines the paper's two routers and is an extension
-to the published method.
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[prompt]"
-.\.venv\Scripts\python.exe -m moira route --experts examples/libero_experts.json --router prompt --examples examples/prompt_examples.jsonl "Open the top drawer."
-```
-
-The prompt backend uses
-[`HuggingFaceTB/SmolLM2-1.7B-Instruct`](https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct).
-It formats the expert pool and optional labeled examples using the tokenizer's
-chat template, generates deterministically, and validates the selected index.
-Invalid or ambiguous output raises `RoutingError`; no expert is executed.
-The complete original prompt is not provided in the paper; this implementation
-uses a reconstructed prompt in `src/moira/routing.py`.
-
-All routing modes support `--style simple|abstract`, `--device cpu|cuda`, `--model`,
-`--revision`, and `--offline`. In hybrid mode, `--model` and `--revision` configure
-MiniLM; `--fallback-model` and `--fallback-revision` configure the LM separately.
-`--examples` supplies few-shot examples for prompt mode or hybrid disambiguation.
-`--max-new-tokens` bounds prompt generation and defaults to 64. Router-specific
-options used with an incompatible mode are rejected instead of being ignored.
-The first pretrained call downloads model files;
-the prompt model needs substantially more memory than MiniLM. `--offline` only
-uses previously cached files. Pin `--revision` to a model commit for repeatable
-experiments. CPU is the CLI default.
-
-The example descriptions and labels are newly authored illustrative data, not
-the paper's original metadata or a held-out benchmark. Keep few-shot examples
-separate from evaluation samples.
-
-## Connect policies
-
-A policy implements `reset(instruction)` and `act(observation)`. Its wrapper owns
-image preprocessing, embodiment information, normalization statistics, action
-decoding, and any action-chunk queue. `reset` must clear episode state.
-
-```python
-from moira import EmbeddingRouter, ExpertRegistry, InMemoryServer, MoIRA
-
-
-# Supply independently loaded policy wrappers implementing reset() and act().
-def build_controller(spatial_policy, goal_policy):
-    registry = ExpertRegistry.from_json("examples/libero_experts.json")
-    router = EmbeddingRouter(registry)
-    server = InMemoryServer({"spatial": spatial_policy, "goal": goal_policy})
-    return MoIRA(registry, router, server)
-
-
-def control_episode(controller, observations):
-    with controller.episode("Pick up the bowl to the right of the cup.") as episode:
-        print(episode.decision.expert_id)
-        for observation in observations:
-            action = episode.act(observation)
-            yield action
-```
-
-Routing uses only instruction and expert text. Visual observations go to the
-selected policy. Routing happens once per episode; observations do not trigger
-rerouting. The original instruction is passed unchanged to the policy.
-
-Always close an episode with its context manager. `InMemoryServer` permits
-parallel episodes when the selected experts use distinct policy objects and
-rejects overlap on the same object. `AdapterServer` rejects all overlapping
-episodes because its adapters share mutable backbone and episode state. Use
-separate adapter servers/backbones for parallel adapter rollouts. Registry
-updates are synchronized; an active episode retains the immutable expert record
-selected at its boundary. Policy handles returned by either server expire when
-their session context closes.
-
-## Adapter serving
-
-`InMemoryServer` retains separate, fully instantiated policies.
-`AdapterServer` shares one backbone and supports:
-
-| Mode | Resident adapters | Switching behavior |
-| --- | --- | --- |
-| `disk` | One | Unload the previous adapter, then load the selected checkpoint |
-| `multi` | All loaded so far | Activate a resident adapter; load unseen adapters once |
-
-Use `server.preload(registry.snapshot())` in `multi` mode to load all adapters
-before latency measurements, and `server.close()` to unload them afterward.
-Preload rejects duplicate IDs and replacement paths, and rolls back adapters it
-added if a later load fails. Close attempts every unload and reports any adapter
-that remains loaded.
-This is ordinary PEFT adapter switching, not S-LoRA/LoRAX optimized kernels;
-the paper's reported latency is not promised here. All adapters on one server
-must target the same compatible backbone.
-
-Add `adapter_path` to each expert in a JSON manifest. Local paths resolve
-relative to the manifest directory. Use `hf://organization/repository` for
-Hugging Face adapter IDs. IDs are unique; both `simple` and `abstract`
-descriptions are required. An omitted adapter path is valid for routing-only
-use and fully instantiated policies.
-
-```python
-from moira import AdapterServer, ExpertRegistry, HybridRouter, MoIRA
-from moira.adapters import PeftAdapterBackend
-
-
-def build_adapter_controller(base_model, action_fn, reset_fn, manifest):
-    registry = ExpertRegistry.from_json(manifest)
-    # action_fn(model, observation, original_instruction) returns an action.
-    # reset_fn(model, instruction) clears robot-policy/chunk state.
-    backend = PeftAdapterBackend(base_model, action_fn, reset_fn=reset_fn)
-    server = AdapterServer(backend, mode="multi")
-    server.preload(registry.snapshot())
-    return MoIRA(registry, HybridRouter(registry), server)
-```
-
-Install `.[adapters]` for the PEFT backend. `base_model` must be a fresh,
-unwrapped compatible PyTorch model placed on its inference device. PEFT-format
-adapters use inference mode and remain frozen after switching. For models with
-native adapter formats, implement the five `AdapterBackend` methods in
-`src/moira/serving.py` instead. GR00T and OpenPI checkpoints are not assumed to
-be PEFT-compatible, and no native robot-specific wrapper is bundled.
-
-## Train specialists
-
-`train_specialist` trains and saves an independent LoRA adapter. Supply a fresh
-backbone for each specialist, its native loss function, device-ready batches,
-and correct target module names:
-
-```python
-from moira.training import LoraTrainingConfig, train_specialist
-
-
-def fit_specialist(base_model, dataloader, policy_loss, output_dir, target_modules):
-    config = LoraTrainingConfig(
-        target_modules=tuple(target_modules),
-        steps=5000,
-        rank=8,
-        alpha=16,
-        learning_rate=1e-4,
-    )
-    return train_specialist(base_model, dataloader, policy_loss, output_dir, config)
-```
-
-`policy_loss(adapted_model, batch)` must return a differentiable scalar tensor.
-The helper freezes the backbone, trains adapter parameters, clips gradients,
-and atomically publishes PEFT weights after a complete save. A reiterable
-dataloader restarts at epoch boundaries. Its internal seed does not change the
-caller's CPU or CUDA random-number streams.
-The seed controls adapter initialization; seed data shuffling and base-model
-initialization in your training entry point too. Nonempty output directories
-are rejected to avoid overwriting checkpoints.
-
-These rank/optimizer settings are implementation defaults, not recovered paper
-hyperparameters. For native VLA training use the backbone's own trainer and
-implement its adapter backend; this helper is not a replacement for native
-GR00T/OpenPI training pipelines.
-
-## Evaluation
-
-```powershell
-.\.venv\Scripts\python.exe -m moira evaluate --experts examples/libero_experts.json --samples examples/routing_samples.jsonl
-```
-
-This emits JSON containing accuracy, macro-F1, per-class F1, the confusion
-matrix, invalid predictions, strategy counts, full routing decisions,
-predictions, and elapsed time. Each input JSONL
-line contains `instruction` and `expert_id`. Macro-F1 includes every expert in
-the supplied manifest; absent classes contribute zero. Invalid LM selections
-count as misses. Model-loading errors propagate instead of being counted as
-classification errors. Timing includes model loading on the first call.
-
-For execution metrics, `moira.evaluation` provides:
-
-- `active_joint_mse(predicted, target, active_joints)`: rectangular time-by-joint
-  arrays with explicit joint selection.
-- `rollout(controller, environment, instruction, seed=..., max_steps=...)`:
-  a Gymnasium-style reset/step loop with the selected expert, actions, reward,
-  success, termination, and truncation recorded.
-- `success_rate(results)`: empirical success fraction over rollout results.
-
-The environment wrapper must emit `info["success"]` or you must provide
-`success_fn(environment, info)`. Termination and positive reward are not
-automatically treated as task success. The caller closes the environment.
-Policies must return a single environment-compatible action; unwrap action
-chunks in the policy wrapper. Run each required seed/trajectory separately.
-
-## Paper coverage and reproduction limits
-
-The implementation follows section 3's external text routing, simple/abstract
-descriptions, and episodic expert execution. It includes all three serving
-regimes and the routing F1, joint MSE, and rollout success metrics. The paper
-trains GR00T-N1 embodiment specialists for 5,000 steps and Ï€â‚€ LIBERO specialists
-for 30,000 steps. Its evaluation uses robot datasets, checkpoints, and simulator
-configurations absent from this repository. See the
-[paper's methods](https://arxiv.org/html/2507.01843v2#S3) for the experimental protocol
-and the [engineering audit](docs/audit.md) for resolved findings and remaining
-deployment boundaries.
-
-Full reproduction additionally requires native VLA loaders/trainers, dataset
-splits and preprocessing, action normalization, original expert descriptions
-and prompt examples, robot environments, and the authors' exact training
-settings. Statistical significance tests and optimized serving kernels are not
-included. Synthetic examples and tiny-model integration tests validate this
-implementation's behavior; they do not establish robotics performance.
+| [src/moira/physical.py](src/moira/physical.py) | Typed end-to-end physical workflow |
+| [src/moira/production.py](src/moira/production.py) | Configuration-driven Baseten, laptop, and Pi composition |
+| [src/moira/cloud.py](src/moira/cloud.py) | Baseten Model API, deployment, Chain, and JSON endpoint clients |
+| [src/moira/model_api_components.py](src/moira/model_api_components.py) | Structured scene perception and voice grounding |
+| [src/moira/robot_link.py](src/moira/robot_link.py) | Authenticated Pi camera, control, and stop service |
+| [config/pi4_runtime.json](config/pi4_runtime.json) | Active production topology |
+| [examples/pi4_components.json](examples/pi4_components.json) | Exact component allow-list and authority map |
+| [deploy](deploy) | Baseten Chains, Truss models, and Pi service files |
+| [robot_models/four_dof_desktop_arm](robot_models/four_dof_desktop_arm) | CAD-derived model, MuJoCo assets, validation, and readiness data |
+| [tools](tools) | Setup, deployment, calibration, training, and demo utilities |
 
 ## Development
 
+Install the development dependencies and run the suite:
+
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[dev,embeddings,prompt,adapters]"
-.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe -m ruff format --check .
 ```
 
-The normal test suite does not download pretrained models. Optional integration
-tests train two tiny real adapters, reload and switch them in both serving modes,
-and generate text using a locally created tiny language model. Without the ML
-extras those integration tests skip. CI runs the core on Windows/Linux and
-Python 3.10/3.12, plus ML integration tests on Linux/Python 3.12.
+Optional dependency groups keep each machine small:
 
-The opt-in E2E suite downloads pinned MiniLM and SmolLM2-1.7B weights, trains two
-LoRA specialists, reloads their saved manifest/checkpoints, and runs complete
-closed-loop episodes with hybrid and prompt routing in all three serving modes:
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_pretrained_e2e.py --run-e2e -q -o junit_logging=all --junitxml=outputs/e2e.xml
-```
-
-It tests both literal descriptions and new paraphrases in a synthetic line
-environment. All actions come from trained adapters; routing outputs are not
-mocked. The quality assertions require every episode to succeed and deliberately
-report semantic misrouting as failures. A separate regression reproduces the raw
-embedding misroute and requires hybrid to correct the unchanged instruction,
-both with and without few-shot examples. Additional directional/negation wording
-is checked separately. Without `--run-e2e`, these tests skip;
-the full language model requires a download of several GB and can run slowly
-on CPU. Use `-k hybrid` or `-k prompt` to select a router. See
-[E2E results](docs/e2e-results.md) for measured outcomes and limitations.
-
-Implementation API references:
-[Sentence Transformers](https://github.com/huggingface/sentence-transformers),
-[Transformers chat templates](https://huggingface.co/docs/transformers/chat_templating),
-[PEFT LoRA](https://huggingface.co/docs/peft/package_reference/lora).
-
+- `camera` for OpenCV camera input
+- `hardware` for the Pi/PCA9685 boundary
+- `rtx-voice` for local Whisper and Kokoro
+- `simulation` for MuJoCo and learned dynamics assets
+- `embeddings`, `prompt`, and `adapters` for router development

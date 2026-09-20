@@ -127,7 +127,7 @@ def test_planner_profile_matches_current_single_arm_robot():
     )
     assert '"installed_arms": ["left"]' in profile
     assert '"future_arms": ["right"]' in profile
-    assert "four-dof-desktop-arm-v1" in profile
+    assert "three-actuator-desktop-arm-v2" in profile
 
 
 def test_planner_generates_several_left_arm_candidates(monkeypatch):

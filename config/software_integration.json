@@ -1,11 +1,13 @@
 {
   "schema_version": 1,
   "validated_for_physical_use": false,
-  "robot_model": "../robot_models/four_dof_desktop_arm/model.json",
+  "robot_model": "../robot_models/four_dof_desktop_arm/physical_three_actuator_model.json",
   "memory_path": "../outputs/software_integration_memory.db",
   "journal_path": "../outputs/software_integration_runs.jsonl",
   "scene_image": "../outputs/software_integration_scene.png",
   "command_audio": "../outputs/software_integration_command.wav",
+  "simulation_learning_config": "simulation_learning.json",
+  "simulation_checkpoint": "../checkpoints/simulation-learning/current.json",
   "profile": {
     "component_ram_budget_mb": 256,
     "simulation_workers": 2,
@@ -17,6 +19,7 @@
   "integration_assumptions": {
     "per_arm_payload_kg": 0.025,
     "max_gripper_width_m": 0.05,
+    "fixed_link_reach_tolerance_m": 0.03,
     "required_clearance_m": 0.02,
     "max_joint_velocity_rad_s": 5.5,
     "max_gripper_velocity_m_s": 0.1,
@@ -28,7 +31,7 @@
   "workspace": {
     "coordinate_frame": "robot_base",
     "up_axis": "y",
-    "table_height_m": 0.0,
+    "table_height_m": 0.0821765800977,
     "minimum_clearance_m": 0.1,
     "people_present": false,
     "human_error_policy": {
@@ -52,7 +55,7 @@
           "resolution_px": [640, 480],
           "camera_matrix": [[500.0, 0.0, 320.0], [0.0, 500.0, 240.0], [0.0, 0.0, 1.0]],
           "distortion_coefficients": [0.0, 0.0, 0.0, 0.0, 0.0],
-          "camera_to_base_matrix": [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.45], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]]
+          "camera_to_base_matrix": [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.45], [0.0, 1.0, 0.0, -0.18149090203557688], [0.0, 0.0, 0.0, 1.0]]
         }
       }
     }

@@ -310,9 +310,10 @@ def test_pi_manifest_is_complete_and_profile_is_bounded():
     data = json.loads(open(manifest, encoding="utf-8").read())
     factories = {entry["id"]: Echo for entry in data["components"]}
     registry = ComponentRegistry.from_json(manifest, factories, ram_budget_mb=256)
-    assert len(registry.specs) == 31
+    assert len(registry.specs) == 29
     assert registry.decide(Layer.CONTROL, "control.single_arm").runtime == "hardware"
-    assert registry.decide(Layer.CONTROL, "control.bimanual").runtime == "hardware"
+    with pytest.raises(LookupError, match="control.bimanual"):
+        registry.decide(Layer.CONTROL, "control.bimanual")
     assert registry.decide(Layer.KINEMATICS, "kinematics.inverse").runtime == "local"
     assert registry.decide(Layer.WORLD, "world.grasp_contact").runtime == "remote"
     tactile_ids = {

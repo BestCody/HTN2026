@@ -100,9 +100,9 @@
   },
   "servo_controller": {
     "type": "pca9685",
-    "i2c_address": null,
-    "reference_clock_hz": null,
-    "pwm_frequency_hz": null,
+    "i2c_address": 64,
+    "reference_clock_hz": 25000000,
+    "pwm_frequency_hz": 50,
     "servo_supply_voltage": 6.0,
     "servo_supply_current_a": 10.0,
     "servo_power_validated": false,
@@ -130,7 +130,7 @@
           "pulse_at_upper_us": null
         },
         "J3_GRIPPER": {
-          "channel": 3,
+          "channel": 2,
           "pulse_at_lower_us": null,
           "pulse_at_upper_us": null
         }
@@ -163,17 +163,17 @@
   },
   "mesh_scale_to_m": 1.0,
   "calibration_complete": false,
-  "kinematics_validated": false,
+  "kinematics_validated": true,
   "collision_geometry_validated": false,
   "actuator_mapping_validated": false,
   "payload_validated": false,
   "blockers": [
-    "the physical elbow is unactuated and its locked pose must be measured against the CAD export",
+    "the rigid elbow must be visually checked against the exported CAD assembly pose before physical motor execution",
     "the two-axis yaw/shoulder kinematics and reachable fixed-link arc require physical validation",
-    "servo-library command degrees must be converted to measured PWM pulse endpoints",
+    "Arduino calibration command-to-PCA9685 tick mapping is recorded; logical joint-angle and gripper-width endpoints still require binding",
     "the shoulder linkage must be tightened before measuring limits or speed",
     "the shoulder drops rapidly as its servo command increases, so guarded velocity must be measured",
-    "gripper aperture at commands 180 and 110 and a safe pressure floor below 110 must be measured",
+    "gripper aperture at commands 180 and 83 and a safe pressure floor below 83 must be measured",
     "the actual SG90 and MG996R dimensions must be checked against the included CAD servo models",
     "the gripper-servo supply-voltage rating must be confirmed before using the 6 V servo rail",
     "Fusion STL bounds exclude non-meshable or hidden CAD geometry: Sharma_Ishaan_rotateBase:1",
@@ -191,7 +191,7 @@
   "fusion_export": "../../four_dof_desktop_arm_export/fusion_robot_export.json",
   "gripper_mechanism": {
     "primary_joint": "J3_GRIPPER",
-    "mirror_joint": "J4_END_EFFECTOR_MIRROR",
+    "mirror_joint": "J3_GRIPPER_MIRROR",
     "gear_ratio": -1.0,
     "mirror_origin_m": [
       0.18430916065175185,
@@ -210,9 +210,9 @@
     }
   },
   "mujoco_validation": {
-    "model": "kinematic_validation.xml",
-    "report": "mujoco_validation.json",
-    "scope": "cad_geometry_only_not_current_three_actuator_topology",
+    "model": "physical_three_actuator_validation.xml",
+    "report": "physical_three_actuator_validation.json",
+    "scope": "fixed_elbow_kinematic_validation",
     "mujoco_version": "3.13.0",
     "steps": 100,
     "finite_state": true,
@@ -223,13 +223,50 @@
     "layout": "yaw_shoulder_fixed_link",
     "effective_reach_m": 0.17949090203557688,
     "fixed_link_reach_tolerance_m": null,
-    "derivation": "CAD shoulder-to-gripper distance in the exported fixed-elbow assembly pose"
+    "derivation": "CAD shoulder-to-gripper distance in the exported fixed-elbow assembly pose",
+    "fixed_elbow": {
+      "rigid": true,
+      "origin_m": [
+        0.11758016706790374,
+        0.18045581720881848,
+        -0.010750000000000346
+      ],
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "reference_angle_deg": 0.0,
+      "pose_source": "exported CAD assembly pose",
+      "physical_rigidity_confirmed": true,
+      "physical_pose_alignment_validated": false,
+      "former_pca9685_channel": 2
+    }
   },
   "physical_actuation": {
     "actuator_count": 3,
     "unused_pca9685_channels": [
-      2
+      3
     ],
-    "observation_record": "../../config/arm1_servo_observations.json"
+    "observation_record": "../../config/arm1_servo_observations.json",
+    "fixed_elbow": {
+      "rigid": true,
+      "former_channel": 2,
+      "runtime_command_allowed": false,
+      "confirmation": "physical elbow holds rigidly under load"
+    },
+    "arduino_calibration": {
+      "source": "../../tools/arduino/pca9685_servo_calibration/pca9685_servo_calibration.ino",
+      "pwm_frequency_hz": 50,
+      "tick_range": [
+        102,
+        512
+      ],
+      "angle_range_deg": [
+        0,
+        180
+      ],
+      "mapping_validated_from_source": true
+    }
   }
 }

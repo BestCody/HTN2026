@@ -22,7 +22,11 @@ def test_general_specialist_catalog_maps_to_remote_replaceable_components():
         if component["runtime"] == "remote"
     }
 
-    assert {expert.id for expert in experts} == remote_ids
+    # The general router catalog can describe future hardware, while the
+    # installed single-arm runtime exposes only its deployable specialists.
+    assert remote_ids <= {expert.id for expert in experts}
+    assert "baseten-bimanual-act" not in remote_ids
+    assert "baseten-bimanual-world" not in remote_ids
     assert all(expert.simple != expert.abstract for expert in experts)
     assert all(expert.interfaces != ("general",) for expert in experts)
     assert all(len(expert.routing_examples) >= 3 for expert in experts)

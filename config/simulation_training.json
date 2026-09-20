@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "robot_model_id": "four-dof-desktop-arm-v1",
+  "robot_model_id": "three-actuator-desktop-arm-v2",
   "robot_source_sha256": "bc5ad54ea950fa068b1c95d26e907497d43277aab97aa67eb58ef610bfd86df5",
-  "mujoco_model_sha256": "de5cf4555d9812870a9a7b7509bb39f4eb488b900db3f8fe6b9367ceaf3a8096",
+  "mujoco_model_sha256": "fca38c944579de8c57c2b42e7d88d4ee380ac40b799fa9a7d0d2d59d06ccb865",
   "timestep_s": null,
   "rollout_horizon_s": null,
   "parallel_candidates": null,
@@ -65,21 +65,14 @@
       "max_torque_nm": null,
       "time_constant_s": null
     },
-    "J3_ELBOW": {
+    "J3_GRIPPER": {
       "damping_nms_rad": null,
       "armature_kg_m2": null,
       "backlash_deg": null,
       "max_torque_nm": null,
       "time_constant_s": null
     },
-    "J4_END_EFFECTOR": {
-      "damping_nms_rad": null,
-      "armature_kg_m2": null,
-      "backlash_deg": null,
-      "max_torque_nm": null,
-      "time_constant_s": null
-    },
-    "J4_END_EFFECTOR_MIRROR": {
+    "J3_GRIPPER_MIRROR": {
       "damping_nms_rad": null,
       "armature_kg_m2": null,
       "backlash_deg": null,

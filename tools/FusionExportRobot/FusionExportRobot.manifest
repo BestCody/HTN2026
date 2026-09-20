@@ -2,9 +2,9 @@
   "autodeskProduct": "Fusion360",
   "type": "script",
   "id": "e006221c-4f19-4a02-b5d8-62da228d0324",
-  "author": "MoIRA",
+  "author": "Charlie",
   "description": {
-    "": "Export the active MoIRA arm assembly's grouped meshes, joints, transforms, parameters, and physical properties."
+    "": "Export the active Charlie arm assembly's grouped meshes, joints, transforms, parameters, and physical properties."
   },
   "version": "1.0.0",
   "runOnStartup": false,

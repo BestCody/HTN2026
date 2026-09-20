@@ -7,7 +7,13 @@ from .cloud import (
     load_runtime_environment,
 )
 from .components import ComponentDecision, ComponentRegistry, ComponentSpec, Layer
-from .edge_components import AlsaCommandRecorder, LanCameraSource, OpenCVCameraSource
+from .edge_components import (
+    AlsaCommandRecorder,
+    FfmpegDshowCommandRecorder,
+    LanCameraSource,
+    OpenCVCameraSource,
+    V4L2JpegSource,
+)
 from .experts import Expert, ExpertRegistry
 from .human_interaction import (
     HumanAwarePhysicalSession,
@@ -98,6 +104,7 @@ __all__ = [
     "AdapterServer",
     "ActionChunk",
     "AlsaCommandRecorder",
+    "FfmpegDshowCommandRecorder",
     "ArmDriver",
     "ArmInstallation",
     "BasetenComponent",
@@ -136,6 +143,7 @@ __all__ = [
     "LoadEstimate",
     "LanCameraSource",
     "load_runtime_environment",
+    "V4L2JpegSource",
     "MotionTrajectory",
     "OutcomeReport",
     "PCA9685ArmDriver",

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mujoco model="mext-simulation-demo">
+  <compiler angle="radian" meshdir="meshes" autolimits="true" balanceinertia="true" />
+  <option timestep="0.01" gravity="0 -9.81 0" />
+  <visual>
+    <global offwidth="1280" offheight="720" />
+    <quality shadowsize="4096" />
+    <headlight ambient="0.35 0.35 0.35" diffuse="0.75 0.75 0.75" specular="0.25 0.25 0.25" />
+  </visual>
+  <statistic center="0.03 0.08 0" extent="0.55" />
+
+  <asset>
+    <mesh name="fixed_base" file="fixed_base.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="turntable" file="turntable.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="upper_arm" file="upper_arm.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="forearm" file="forearm.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="gripper_fixed" file="gripper_fixed.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="gripper_mirror" file="gripper_mirror.stl" scale="1 1 1" inertia="convex" />
+    <mesh name="gripper_primary" file="gripper_primary.stl" scale="1 1 1" inertia="convex" />
+    <texture name="table_texture" type="2d" builtin="checker" rgb1="0.07 0.09 0.12" rgb2="0.11 0.14 0.18" width="512" height="512" />
+    <material name="table" texture="table_texture" texrepeat="5 5" reflectance="0.08" />
+    <material name="robot" rgba="0.18 0.48 0.82 1" metallic="0.2" roughness="0.45" />
+    <material name="robot_dark" rgba="0.08 0.13 0.22 1" metallic="0.15" roughness="0.5" />
+    <material name="red_cube" rgba="0.95 0.03 0.04 1" metallic="0.05" roughness="0.32" />
+    <material name="green_platform" rgba="0.03 0.82 0.22 1" metallic="0.05" roughness="0.38" />
+  </asset>
+
+  <worldbody>
+    <light name="key" directional="false" pos="0.15 0.75 0.35" dir="-0.15 -1 -0.35" diffuse="1 0.96 0.9" castshadow="true" />
+    <light name="fill" directional="false" pos="-0.45 0.35 -0.35" dir="0.5 -0.4 0.4" diffuse="0.35 0.48 0.7" castshadow="false" />
+    <geom name="demo_table" type="box" pos="0 -0.025 0" size="0.42 0.025 0.31" material="table" contype="1" conaffinity="1" />
+
+    <body name="workspace_center" pos="0.145 0.025 0" />
+    <camera name="overview" mode="targetbody" target="workspace_center" pos="0.48 0.40 0.48" fovy="48" />
+
+    <body name="green_platform" pos="0.16 0.012 -0.035">
+      <geom name="green_platform_geom" type="box" size="0.075 0.012 0.065" material="green_platform" contype="1" conaffinity="1" />
+    </body>
+    <body name="red_cube" mocap="true" pos="0.13 0.021 0.12">
+      <geom name="red_cube_geom" type="box" size="0.021 0.021 0.021" material="red_cube" contype="0" conaffinity="0" />
+    </body>
+
+    <body name="fixed_base">
+      <geom name="fixed_base_mesh" type="mesh" mesh="fixed_base" material="robot_dark" contype="0" conaffinity="0" />
+      <body name="turntable" pos="0.00965 0.047349999914 -3.30779244597e-16">
+        <joint name="J1_BASE_YAW" type="hinge" axis="0 1 0" limited="false" />
+        <geom name="turntable_mesh" type="mesh" mesh="turntable" material="robot" contype="0" conaffinity="0" />
+        <body name="upper_arm" pos="-0.00353585011008 0.0266398001168 -0.0054">
+          <joint name="J2_SHOULDER" type="hinge" axis="0 0 1" limited="false" />
+          <geom name="upper_arm_mesh" type="mesh" mesh="upper_arm" material="robot" contype="0" conaffinity="0" />
+          <body name="forearm" pos="0.111466017178 0.106466017178 -0.00535">
+            <geom name="forearm_mesh" type="mesh" mesh="forearm" material="robot" contype="0" conaffinity="0" />
+            <geom name="gripper_fixed_mesh" type="mesh" mesh="gripper_fixed" material="robot_dark" contype="0" conaffinity="0" />
+            <site name="gripper_center" pos="0.0632579918849 -0.0782792371111 -0.02455" size="0.003" rgba="0 1 1 0" />
+            <camera name="arm_pov" mode="targetbody" target="workspace_center" pos="0.105 0.10 0" fovy="72" />
+            <body name="gripper_primary" pos="0.0632579918849 -0.0782792371111 -0.02455">
+              <joint name="J3_GRIPPER" type="hinge" axis="0.708318205351 0.70589327803 0" limited="false" />
+              <geom name="gripper_primary_mesh" type="mesh" mesh="gripper_primary" material="robot_dark" contype="0" conaffinity="0" />
+            </body>
+            <body name="gripper_mirror" pos="0.0667289935838 -0.0746789389004 0.005">
+              <joint name="J3_GRIPPER_MIRROR" type="hinge" axis="0.708318205351 0.70589327803 0" limited="false" />
+              <geom name="gripper_mirror_mesh" type="mesh" mesh="gripper_mirror" material="robot_dark" contype="0" conaffinity="0" />
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <equality>
+    <joint name="J3_GRIPPER_GEAR_COUPLING" joint1="J3_GRIPPER" joint2="J3_GRIPPER_MIRROR" polycoef="0 -1 0 0 0" />
+  </equality>
+</mujoco>

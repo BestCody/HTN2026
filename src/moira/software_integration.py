@@ -1,8 +1,10 @@
-"""Non-actuating integration profile for the pre-training hackathon workflow.
+"""Non-actuating integration profile for the hackathon workflow.
 
-This profile exercises real cloud/LAN boundaries while using named deterministic
-stand-ins for robot-specific learned models that have not been trained yet.  Its
-configuration is deliberately rejected for physical execution.
+This profile exercises real cloud/LAN boundaries and loads hash-bound, accepted
+simulation checkpoints for fixed-elbow waypoint control and short-horizon
+dynamics. Specialists without robot-specific checkpoints remain explicitly
+identified by their implementation type. The profile can never authorize
+physical execution.
 """
 
 from __future__ import annotations
@@ -34,6 +36,11 @@ from .edge_components import (
     SQLitePersonalMemory,
 )
 from .human_interaction import HumanAwarePhysicalSession, PlanProposal
+from .learned_specialists import (
+    AcceptedSimulationModels,
+    LearnedForwardDynamics,
+    LearnedWaypointKinematics,
+)
 from .model_api_components import ModelAPIScenePerception, ModelAPIVoiceGrounder
 from .physical import (
     BimanualControlComponent,
@@ -42,18 +49,19 @@ from .physical import (
     PhysicalAI,
     PhysicalAIResult,
     PipelineEvent,
+    RobotState,
 )
 from .pi import PiRuntimeProfile
 from .production import ExactContractRouter
 from .robot_config import load_robot_model
 from .session import JsonlRunJournal, PhysicalSession
+from .simulation_learning import load_simulation_learning_config
 from .specialists import (
     AnalyticGraspPlanner,
     BoundedTrajectoryPlanner,
     ConservativeCollisionChecker,
     HardSafetyRiskModel,
     ModelBasedTaskReward,
-    PlanarBimanualIK,
     SpecializedManipulationPolicy,
     StateSpaceWorldModel,
     TactileSignalModel,
@@ -72,6 +80,8 @@ class SoftwareIntegrationConfig:
     journal_path: Path
     scene_image: Path
     command_audio: Path
+    simulation_learning_config: Path
+    simulation_checkpoint: Path
     workspace: dict[str, Any]
     profile: PiRuntimeProfile
     assumptions: dict[str, float]
@@ -116,6 +126,7 @@ def load_software_integration_config(path: str | Path) -> SoftwareIntegrationCon
     required_assumptions = {
         "per_arm_payload_kg",
         "max_gripper_width_m",
+        "fixed_link_reach_tolerance_m",
         "required_clearance_m",
         "max_joint_velocity_rad_s",
         "max_gripper_velocity_m_s",
@@ -144,6 +155,8 @@ def load_software_integration_config(path: str | Path) -> SoftwareIntegrationCon
         resolved("journal_path"),
         resolved("scene_image"),
         resolved("command_audio"),
+        resolved("simulation_learning_config"),
+        resolved("simulation_checkpoint"),
         workspace,
         PiRuntimeProfile(**profile),
         {key: float(value) for key, value in assumptions.items()},
@@ -188,21 +201,31 @@ def build_software_integration_session(
     config: SoftwareIntegrationConfig,
     *,
     event_sink: Callable[[PipelineEvent], None] | None = None,
-) -> tuple[PhysicalSession, SQLitePersonalMemory, SimulatedArmDriver]:
+    camera_source: Any | None = None,
+    arm_driver: Any | None = None,
+    control_component_id: str = "dual-arm-hardware",
+    control_model: str = "non-actuating-integration-controller-v1",
+    control_runtime: str = "hardware",
+    perception_wrapper: Callable[[Any], Any] | None = None,
+    voice_grounder_wrapper: Callable[[Any], Any] | None = None,
+    profile_user_id: str = "demo-user",
+) -> tuple[PhysicalSession, SQLitePersonalMemory, Any, AcceptedSimulationModels]:
     """Build a session that cannot move a physical motor under any request."""
 
     load_dotenv(config.path.parent.parent / ".env", override=False)
     load_dotenv(Path.cwd() / ".env", override=False)
     model = load_robot_model(config.robot_model, verify_source=True)
     assumptions = config.assumptions
+    learned_models = AcceptedSimulationModels(
+        config.simulation_checkpoint,
+        load_simulation_learning_config(config.simulation_learning_config),
+    )
     http = JsonHttpClient(
         timeout_seconds=config.profile.cloud_timeout_seconds,
         attempts=2,
     )
     model_name = os.environ.get("BASETEN_VISION_MODEL_API", "zai-org/GLM-5.3-Flash")
-    voice_model_name = os.environ.get(
-        "BASETEN_VOICE_NLP_MODEL_API", "zai-org/GLM-5.3-Flash"
-    )
+    voice_model_name = os.environ.get("BASETEN_VOICE_NLP_MODEL_API", "zai-org/GLM-5.3-Flash")
     stt = JsonComponent(
         JsonEndpoint(
             _environment("MOIRA_STT_URL"),
@@ -238,12 +261,12 @@ def build_software_integration_session(
     )
     memory = SQLitePersonalMemory(config.memory_path)
     memory.set_profile(
-        "demo-user",
+        profile_user_id,
         preferences={"motion_style": "slow", "delivery_side": "right"},
         accommodations=("avoid sudden motion near the user's left side",),
         workspace={"known_workspace": "hackathon demo table"},
     )
-    left_driver = SimulatedArmDriver(
+    left_driver = arm_driver or SimulatedArmDriver(
         "left", measured_mass_kg=assumptions["per_arm_payload_kg"]
     )
     registry = ComponentRegistry(
@@ -256,7 +279,11 @@ def build_software_integration_session(
         Layer.PERCEPTION,
         ("perception.scene",),
         model_name,
-        ModelAPIScenePerception(BasetenModelAPI(model_name, http=http)),
+        (
+            perception_wrapper(ModelAPIScenePerception(BasetenModelAPI(model_name, http=http)))
+            if perception_wrapper is not None
+            else ModelAPIScenePerception(BasetenModelAPI(model_name, http=http))
+        ),
         runtime="remote",
     )
     _register(
@@ -290,7 +317,13 @@ def build_software_integration_session(
         Layer.VOICE,
         ("voice.ground",),
         voice_model_name,
-        ModelAPIVoiceGrounder(BasetenModelAPI(voice_model_name, http=http)),
+        (
+            voice_grounder_wrapper(
+                ModelAPIVoiceGrounder(BasetenModelAPI(voice_model_name, http=http))
+            )
+            if voice_grounder_wrapper is not None
+            else ModelAPIVoiceGrounder(BasetenModelAPI(voice_model_name, http=http))
+        ),
         runtime="remote",
     )
     _register(
@@ -314,7 +347,6 @@ def build_software_integration_session(
     )
     for component_id, capability, policy_name in (
         ("baseten-waypoint-policy", "manipulation.skill.waypoint", "waypoint"),
-        ("baseten-bimanual-act", "manipulation.bimanual", "bimanual"),
         ("baseten-pour-policy", "manipulation.skill.pour", "pour"),
         ("baseten-insert-policy", "manipulation.skill.insert", "insert"),
         ("baseten-open-lid-policy", "manipulation.skill.open_lid", "open-lid"),
@@ -325,7 +357,7 @@ def build_software_integration_session(
             component_id,
             Layer.MANIPULATION,
             (capability,),
-            f"untrained-integration-{policy_name}-v1",
+            f"semantic-{policy_name}-action-chunker-v1",
             SpecializedManipulationPolicy(policy_name),
             runtime="remote",
             concurrency=2,
@@ -335,14 +367,11 @@ def build_software_integration_session(
         "local-bimanual-ik",
         Layer.KINEMATICS,
         ("kinematics.inverse",),
-        "cad-analytic-ik-integration-v1",
-        PlanarBimanualIK(
-            upper_arm_m=model.upper_arm_m,
-            forearm_m=model.forearm_m,
-            shoulder_height_m=model.shoulder_height_m,
-            shoulder_offset_m=0.0,
-            include_wrist_joint=False,
-            up_axis=model.up_axis,
+        f"fixed-elbow-waypoint-policy-{learned_models.run_id}",
+        LearnedWaypointKinematics(
+            learned_models,
+            max_gripper_width_m=assumptions["max_gripper_width_m"],
+            position_tolerance_m=assumptions["fixed_link_reach_tolerance_m"],
         ),
         concurrency=2,
     )
@@ -365,9 +394,7 @@ def build_software_integration_session(
         Layer.MOTION,
         ("motion.collision_check",),
         "conservative-collision-integration-v1",
-        ConservativeCollisionChecker(
-            required_clearance_m=assumptions["required_clearance_m"]
-        ),
+        ConservativeCollisionChecker(required_clearance_m=assumptions["required_clearance_m"]),
         concurrency=2,
     )
     _register(
@@ -381,20 +408,12 @@ def build_software_integration_session(
             "tactile.grasp_stability",
         ),
         "tactile-integration-v1",
-        TactileSignalModel(
-            min_stability_score=assumptions["min_grasp_stability_score"]
-        ),
+        TactileSignalModel(min_stability_score=assumptions["min_grasp_stability_score"]),
     )
     for component_id, layer, capability, kind in (
         ("baseten-forward-dynamics", Layer.DYNAMICS, "dynamics.predict", "forward-dynamics"),
         ("baseten-rigid-world", Layer.WORLD, "world.rigid_dynamics", "rigid-dynamics"),
         ("baseten-grasp-contact-world", Layer.WORLD, "world.grasp_contact", "grasp-contact"),
-        (
-            "baseten-bimanual-world",
-            Layer.WORLD,
-            "world.bimanual_coordination",
-            "bimanual-coordination",
-        ),
         (
             "baseten-deformable-world",
             Layer.WORLD,
@@ -403,15 +422,29 @@ def build_software_integration_session(
         ),
         ("baseten-human-motion-world", Layer.WORLD, "world.human_motion", "human-motion"),
     ):
+        component = (
+            LearnedForwardDynamics(
+                learned_models,
+                max_gripper_width_m=assumptions["max_gripper_width_m"],
+            )
+            if kind == "forward-dynamics"
+            else StateSpaceWorldModel(
+                kind,
+                per_arm_payload_kg=assumptions["per_arm_payload_kg"],
+            )
+        )
+        component_model = (
+            f"fixed-elbow-dynamics-{learned_models.run_id}"
+            if kind == "forward-dynamics"
+            else f"state-space-{kind}-v1"
+        )
         _register(
             registry,
             component_id,
             layer,
             (capability,),
-            f"untrained-integration-{kind}-v1",
-            StateSpaceWorldModel(
-                kind, per_arm_payload_kg=assumptions["per_arm_payload_kg"]
-            ),
+            component_model,
+            component,
             concurrency=2,
         )
     _register(
@@ -419,7 +452,7 @@ def build_software_integration_session(
         "baseten-task-reward",
         Layer.REWARD,
         ("reward.task_progress",),
-        "untrained-integration-task-reward-v1",
+        "model-based-task-reward-v1",
         ModelBasedTaskReward(),
         concurrency=2,
     )
@@ -439,12 +472,12 @@ def build_software_integration_session(
     )
     _register(
         registry,
-        "dual-arm-hardware",
+        control_component_id,
         Layer.CONTROL,
-        ("control.single_arm", "control.bimanual"),
-        "non-actuating-integration-controller-v1",
+        ("control.single_arm",),
+        control_model,
         BimanualControlComponent(left_driver),
-        runtime="hardware",
+        runtime=control_runtime,
     )
     _register(
         registry,
@@ -452,7 +485,11 @@ def build_software_integration_session(
         Layer.OUTCOME,
         ("outcome.verify",),
         "integration-telemetry-outcome-v1",
-        TelemetryOutcomeVerifier(),
+        TelemetryOutcomeVerifier(
+            placement_tolerance_m=float(
+                config.workspace["human_error_policy"]["max_pre_execution_target_drift_m"]
+            )
+        ),
     )
     _register(
         registry,
@@ -460,9 +497,7 @@ def build_software_integration_session(
         Layer.FAILURE,
         ("failure.classify",),
         "integration-failure-v1",
-        TelemetryFailureClassifier(
-            max_slip_probability=assumptions["max_slip_probability"]
-        ),
+        TelemetryFailureClassifier(max_slip_probability=assumptions["max_slip_probability"]),
     )
     _register(
         registry,
@@ -486,9 +521,7 @@ def build_software_integration_session(
         Layer.FEEDBACK,
         ("feedback.learn",),
         "integration-feedback-v1",
-        LoadFeedbackComponent(
-            single_arm_payload_kg=assumptions["per_arm_payload_kg"]
-        ),
+        LoadFeedbackComponent(single_arm_payload_kg=assumptions["per_arm_payload_kg"]),
     )
     semantic = RemoteComponentRouter.from_baseten_chain(
         registry,
@@ -511,10 +544,31 @@ def build_software_integration_session(
     )
     session = PhysicalSession(
         system,
-        (ImageFileCamera(config.scene_image),),
+        (camera_source or ImageFileCamera(config.scene_image),),
         JsonlRunJournal(config.journal_path),
     )
-    return session, memory, left_driver
+    return session, memory, left_driver, learned_models
+
+
+def commanded_home_state(
+    models: AcceptedSimulationModels,
+    *,
+    max_gripper_width_m: float,
+) -> RobotState:
+    """Create the explicit motor-locked state used before physical telemetry exists."""
+
+    commands = (
+        models.config.base_commands[0],
+        models.config.shoulder_commands[0],
+        models.config.gripper_commands[1],
+    )
+    qpos = models.commands_to_qpos(commands)
+    return RobotState(
+        joint_positions={"left": (qpos[0], qpos[1])},
+        gripper_widths_m={"left": max_gripper_width_m},
+        observed_at=time(),
+        source="commanded_home",
+    )
 
 
 def run_software_integration(
@@ -524,7 +578,7 @@ def run_software_integration(
 ) -> SoftwareIntegrationRun:
     if not config.scene_image.is_file() or not config.command_audio.is_file():
         raise FileNotFoundError("software integration scene image and command audio are required")
-    session, _memory, driver = build_software_integration_session(
+    session, _memory, driver, learned_models = build_software_integration_session(
         config,
         event_sink=event_sink,
     )
@@ -533,6 +587,10 @@ def run_software_integration(
             user_id="demo-user",
             audio=config.command_audio.read_bytes(),
             workspace=config.workspace,
+            robot_state=commanded_home_state(
+                learned_models,
+                max_gripper_width_m=config.assumptions["max_gripper_width_m"],
+            ),
             execute=False,
             speak=True,
         )
@@ -551,6 +609,7 @@ def validate_software_integration_result(
     driver: SimulatedArmDriver,
     *,
     required_transcript_terms: tuple[str, ...] = ("red block", "blue tray"),
+    generic_pick_place: bool = False,
 ) -> SoftwareIntegrationRun:
     """Apply the same strict evidence checks to normal and recovery demos."""
 
@@ -559,13 +618,24 @@ def validate_software_integration_result(
     routed = tuple(item.component_id for item in result.routing)
     world_models = tuple(dict.fromkeys(item.model_kind for item in result.world_predictions))
     grounded_roles = result.intent.object_roles
+    if generic_pick_place:
+        visual_grounding = bool(object_ids)
+        grounded_intent = any(
+            object_id in object_ids and role == "manipulated"
+            for object_id, role in grounded_roles.items()
+        ) and all(object_id in object_ids for object_id in grounded_roles)
+    else:
+        visual_grounding = {"red-block-1", "blue-tray-1"} <= object_ids
+        grounded_intent = grounded_roles.get("red-block-1") == "manipulated" and (
+            grounded_roles.get("blue-tray-1") == "destination"
+        )
     checks = {
         "speech transcript": all(
             term.casefold() in transcript.casefold() for term in required_transcript_terms
-        ),
-        "visual grounding": {"red-block-1", "blue-tray-1"} <= object_ids,
-        "grounded intent": grounded_roles.get("red-block-1") == "manipulated"
-        and grounded_roles.get("blue-tray-1") == "destination",
+        )
+        and bool(transcript.strip()),
+        "visual grounding": visual_grounding,
+        "grounded intent": grounded_intent,
         "personal memory": bool(result.personal.accommodations),
         "router chain": any(item.router == "remote_semantic" for item in result.routing),
         "planner chain": routed.count("baseten-task-planner") == 2,
@@ -602,7 +672,7 @@ def run_human_error_integration(
 
     if not config.scene_image.is_file():
         raise FileNotFoundError("software integration scene image is required")
-    session, _memory, driver = build_software_integration_session(
+    session, _memory, driver, learned_models = build_software_integration_session(
         config,
         event_sink=event_sink,
     )
@@ -612,16 +682,28 @@ def run_human_error_integration(
             user_id="demo-user",
             workspace=config.workspace,
         )
+        robot_state = commanded_home_state(
+            learned_models,
+            max_gripper_width_m=config.assumptions["max_gripper_width_m"],
+        )
         ambiguous_text = "Move the red block."
         ambiguous_audio = session.system.synthesize_speech(ambiguous_text, "demo-user")
-        first = conversation.plan(audio=ambiguous_audio, speak=True)
+        first = conversation.plan(
+            audio=ambiguous_audio,
+            robot_state=robot_state,
+            speak=True,
+        )
         if not isinstance(first, ClarificationResult):
             raise RuntimeError("human-error demo did not request a missing destination")
         correction_text = "Put it in the blue tray."
         if correction_sink is not None:
             correction_sink(first.question, correction_text)
         correction_audio = session.system.synthesize_speech(correction_text, "demo-user")
-        second = conversation.plan(audio=correction_audio, speak=True)
+        second = conversation.plan(
+            audio=correction_audio,
+            robot_state=robot_state,
+            speak=True,
+        )
         if not isinstance(second, PlanProposal):
             raise RuntimeError("human-error correction did not produce a confirmable plan")
         return validate_software_integration_result(

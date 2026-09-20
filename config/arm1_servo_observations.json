@@ -5,13 +5,13 @@
   "arm": "left",
   "physical_id": "arm_1",
   "reported_at": "2026-09-20",
-  "command_units": "servo-library degrees; PWM pulse mapping not yet identified",
+  "command_units": "Arduino angle commands mapped to PCA9685 ticks with integer arithmetic",
   "pca9685_channels": {
     "J1_BASE_YAW": 0,
     "J2_SHOULDER": 1,
-    "J3_GRIPPER": 3,
+    "J3_GRIPPER": 2,
     "unused": [
-      2
+      3
     ]
   },
   "reference_marks": {
@@ -19,43 +19,141 @@
   },
   "observations": {
     "J1_BASE_YAW": {
-      "front_command_deg": 7,
-      "back_facing_command_deg": 137
+      "front_command_deg": 0,
+      "left_command_deg": 60,
+      "back_facing_command_deg": 123,
+      "upper_hard_limit_command_deg": 123
     },
     "J2_SHOULDER": {
-      "highest_command_deg_approx": 0,
       "pose_observations": [
         {
           "command_deg": 0,
-          "pose": "slightly leaning forward; servo cannot hold farther back"
+          "pose": "kind of leaning back"
         },
         {
-          "command_deg": 20,
-          "pose": "arm approximately 45 degrees to the ground"
-        },
-        {
-          "command_deg": 45,
-          "pose": "arm almost parallel with the ground"
+          "command_deg": 90,
+          "pose": "all the way down"
         }
       ],
       "hazards": [
-        "linkage must be tightened before final calibration",
-        "increasing beyond zero can drop the arm rapidly"
-      ]
+        "commands above 90 push the arm off the ground"
+      ],
+      "upper_hard_limit_command_deg": 90
     },
     "J3_GRIPPER": {
       "maximum_open_command_deg": 180,
-      "first_closed_command_deg": 110,
-      "pressure_behavior": "commands below 110 increase gripping pressure",
+      "first_closed_command_deg": 83,
+      "pressure_behavior": "commands below 83 add gripping pressure",
       "minimum_safe_pressure_command_deg": null
+    },
+    "J2_FIXED_ELBOW": {
+      "rigid_under_load": true,
+      "actuated": false,
+      "former_pca9685_channel": 2,
+      "simulation_pose": "exported CAD assembly pose",
+      "physical_pose_alignment_validated": false
     }
   },
   "not_validated": [
-    "servo library and its angle-to-pulse mapping",
-    "PWM pulse widths at every endpoint",
-    "physical joint angles at base endpoints",
-    "shoulder safe lower limit and maximum velocity",
-    "gripper aperture in metres and safe pressure floor",
+    "physical joint angles between observed servo endpoints",
+    "rigid elbow alignment with the exported CAD assembly pose",
+    "shoulder maximum velocity",
+    "gripper aperture in metres and safe pressure floor below command 83",
+    "PCA9685 oscillator frequency error relative to the nominal pulse durations",
     "repeatability under load"
-  ]
+  ],
+  "calibration_source": {
+    "controller": "Arduino with Adafruit_PWMServoDriver",
+    "source_file": "../tools/arduino/pca9685_servo_calibration/pca9685_servo_calibration.ino",
+    "sketch_available": true,
+    "runtime_controller": "PCA9685 on Raspberry Pi",
+    "i2c_address_default": 64,
+    "pwm_frequency_hz": 50,
+    "servo_min_tick": 102,
+    "servo_max_tick": 512,
+    "mapping": "tick = 102 + trunc(angle_deg * 410 / 180)",
+    "nominal_tick_period_us": 4.8828125,
+    "nominal_pulse_note": "pulse values use the nominal 20 ms period; tick commands are the exact calibration evidence"
+  },
+  "derived_simulation_estimates": {
+    "use_for_physical_pwm": false,
+    "J1_BASE_YAW": {
+      "command_interval_deg": [
+        0,
+        123
+      ],
+      "semantic_anchors": {
+        "front": 0,
+        "left": 60,
+        "back_approx": 123
+      },
+      "joint_angle_estimate_deg": [
+        0,
+        90,
+        180
+      ]
+    },
+    "J2_SHOULDER": {
+      "command_interval_deg": [
+        0,
+        90
+      ],
+      "joint_angle_estimate_deg": [
+        90,
+        0
+      ],
+      "basis": "endpoint-linear estimate: command 0 leaning back; command 90 all the way down",
+      "confidence": "medium for endpoints; intermediate physical angles are inferred"
+    },
+    "J3_GRIPPER": {
+      "non_pressure_interval_deg": [
+        83,
+        180
+      ],
+      "exclude_below_deg_until_pressure_tested": 83
+    }
+  },
+  "derived_pwm_commands": {
+    "J1_BASE_YAW": {
+      "front": {
+        "arduino_angle_deg": 0,
+        "pca9685_tick": 102,
+        "nominal_pulse_us": 498.046875
+      },
+      "left": {
+        "arduino_angle_deg": 60,
+        "pca9685_tick": 238,
+        "nominal_pulse_us": 1162.109375
+      },
+      "back_facing_approx": {
+        "arduino_angle_deg": 123,
+        "pca9685_tick": 382,
+        "nominal_pulse_us": 1865.234375
+      }
+    },
+    "J2_SHOULDER": {
+      "leaning_back_approx": {
+        "arduino_angle_deg": 0,
+        "pca9685_tick": 102,
+        "nominal_pulse_us": 498.046875
+      },
+      "all_the_way_down_approx": {
+        "arduino_angle_deg": 90,
+        "pca9685_tick": 307,
+        "nominal_pulse_us": 1499.0234375
+      }
+    },
+    "J3_GRIPPER": {
+      "first_closed": {
+        "arduino_angle_deg": 83,
+        "pca9685_tick": 291,
+        "nominal_pulse_us": 1420.8984375
+      },
+      "maximum_open": {
+        "arduino_angle_deg": 180,
+        "pca9685_tick": 512,
+        "nominal_pulse_us": 2500.0
+      }
+    }
+  }
 }

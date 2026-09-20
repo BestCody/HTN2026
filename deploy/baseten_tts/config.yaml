@@ -1,11 +1,11 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/basetenlabs/truss/main/truss/config.schema.json
-description: Low-latency spoken responses for the MoIRA physical-AI runtime.
-model_name: MoIRA Kokoro TTS
+description: Low-latency spoken responses for the Charlie physical-AI runtime.
+model_name: Charlie Kokoro TTS
 python_version: py311
 model_metadata:
   model_id: /models/kokoro-82m
   default_voice: af_heart
-  pretty_name: MoIRA Kokoro TTS
+  pretty_name: Charlie Kokoro TTS
   tags:
     - text-to-speech
     - physical-ai

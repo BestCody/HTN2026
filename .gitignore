@@ -20,6 +20,7 @@ dist/
 # Model-training and evaluation outputs
 checkpoints/
 outputs/
+/deploy/baseten_router/model/
 runs/
 wandb/
 mlruns/
@@ -41,6 +42,10 @@ memory.db-*
 /four_dof_desktop_arm_export/
 /current_lightweight_arm_export/
 /result.json
+
+# Local scripted judge fallback. Keep all hardcoded-only code, trajectories,
+# recordings, and presentation assets here so none are committed accidentally.
+/hardcoded_demo/
 
 # Editor and operating-system metadata
 .idea/

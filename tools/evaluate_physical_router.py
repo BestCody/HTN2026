@@ -25,6 +25,7 @@ def main() -> int:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--model", default=MINILM_MODEL)
     parser.add_argument("--style", choices=("simple", "abstract"), default="simple")
+    parser.add_argument("--aggregation", choices=("max", "centroid"), default="max")
     parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
 
@@ -38,14 +39,18 @@ def main() -> int:
     )
     full_labels = [expert.id for expert in experts]
     report = {
-        "router": "frozen_minilm_prototype_cosine",
+        "router": f"minilm_prototype_{args.aggregation}_cosine",
         "model": args.model,
         "device": args.device,
         "style": args.style,
         "catalog": str(args.experts),
         "samples": str(args.samples),
         "full_pool": evaluate_routing(
-            PrototypeEmbeddingRouter(registry, encoder, style=args.style), samples, full_labels
+            PrototypeEmbeddingRouter(
+                registry, encoder, style=args.style, aggregation=args.aggregation
+            ),
+            samples,
+            full_labels,
         ),
         "interfaces": {},
     }
@@ -60,7 +65,9 @@ def main() -> int:
             continue
         scoped = registry.for_interface(interface)
         report["interfaces"][interface] = evaluate_routing(
-            PrototypeEmbeddingRouter(scoped, encoder, style=args.style),
+            PrototypeEmbeddingRouter(
+                scoped, encoder, style=args.style, aggregation=args.aggregation
+            ),
             scoped_samples,
             labels,
         )

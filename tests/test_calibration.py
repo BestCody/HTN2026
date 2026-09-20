@@ -10,7 +10,7 @@ from moira.calibration import (
 )
 from moira.robot_config import RobotModel
 
-MODEL = Path("robot_models/four_dof_desktop_arm/model.json")
+MODEL = Path("robot_models/four_dof_desktop_arm/physical_three_actuator_model.json")
 
 
 def _model():
@@ -43,13 +43,12 @@ def _complete_record():
 def test_template_uses_confirmed_arm_and_channels_without_inventing_measurements():
     record = create_servo_calibration_template(_model(), "left")
 
-    assert record["robot_model_id"] == "four-dof-desktop-arm-v1"
+    assert record["robot_model_id"] == "three-actuator-desktop-arm-v2"
     assert record["physical_id"] == "arm_1"
     assert {name: item["channel"] for name, item in record["joints"].items()} == {
         "J1_BASE_YAW": 0,
         "J2_SHOULDER": 1,
-        "J3_ELBOW": 2,
-        "J4_END_EFFECTOR": 3,
+        "J3_GRIPPER": 2,
     }
     assert all(item["lower_deg"] is None for item in record["joints"].values())
     with pytest.raises(ValueError, match="not marked installed"):
