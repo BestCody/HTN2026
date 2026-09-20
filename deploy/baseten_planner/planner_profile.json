@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "robot_model_id": "four-dof-desktop-arm-v1",
+  "robot_source_sha256": "bc5ad54ea950fa068b1c95d26e907497d43277aab97aa67eb58ef610bfd86df5",
+  "installed_arms": ["left"],
+  "future_arms": ["right"],
+  "variants": [
+    {"id": "direct", "clearance_m": 0.03, "speed_scale": 0.85},
+    {"id": "balanced", "clearance_m": 0.05, "speed_scale": 0.70},
+    {"id": "high-clearance", "clearance_m": 0.07, "speed_scale": 0.55}
+  ],
+  "step_durations_s": {
+    "approach": 0.55,
+    "grasp": 0.40,
+    "lift": 0.55,
+    "transfer": 1.00,
+    "release": 0.35,
+    "inspect": 0.60
+  }
+}

@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/basetenlabs/truss/main/truss/config.schema.json
+description: Scene-grounded command understanding for MoIRA physical tasks.
+model_name: MoIRA Scene-Grounded Voice NLP
+python_version: py311
+model_metadata:
+  model_id: /models/qwen2.5-3b-instruct
+  pretty_name: MoIRA Scene-Grounded Voice NLP
+  tags:
+    - command-understanding
+    - scene-grounding
+    - physical-ai
+weights:
+  - source: hf://Qwen/Qwen2.5-3B-Instruct@aa8e72537993ba99e69dfaafa59ed015b17504d1
+    mount_location: /models/qwen2.5-3b-instruct
+requirements:
+  - torch==2.7.1
+  - transformers==4.57.6
+  - safetensors==0.6.2
+  - lm-format-enforcer==0.11.3
+resources:
+  instance_type: L4:4x16

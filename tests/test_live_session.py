@@ -1,5 +1,6 @@
 import json
 import sys
+from base64 import b64encode
 from pathlib import Path
 from time import time
 from types import ModuleType
@@ -7,7 +8,7 @@ from types import ModuleType
 import pytest
 
 from moira.components import ComponentRegistry
-from moira.edge_components import AlsaCommandRecorder, OpenCVCameraSource
+from moira.edge_components import AlsaCommandRecorder, LanCameraSource, OpenCVCameraSource
 from moira.physical import (
     CameraFrame,
     OutcomeInput,
@@ -67,6 +68,78 @@ def test_usb_camera_captures_bounded_jpeg_and_releases(monkeypatch):
     assert not created[0].open
 
 
+def test_lan_camera_decodes_authenticated_jpeg_contract(monkeypatch):
+    payload = json.dumps(
+        {
+            "camera_id": "co6-usb",
+            "captured_at": 123.5,
+            "media_type": "image/jpeg",
+            "data_base64": b64encode(b"\xff\xd8\xffjpeg").decode("ascii"),
+        }
+    ).encode()
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self, limit):
+            captured["limit"] = limit
+            return payload
+
+    def urlopen(request, timeout):
+        captured["authorization"] = request.get_header("Authorization")
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr("moira.edge_components.urllib.request.urlopen", urlopen)
+    frame = LanCameraSource(
+        "http://robot-brain.local:8765/v1/camera",
+        token="secret",
+        camera_id="co6-usb",
+    ).capture()
+    assert frame.data == b"\xff\xd8\xffjpeg"
+    assert frame.captured_at == 123.5
+    assert captured["authorization"] == "Bearer secret"
+    assert captured["timeout"] == 5.0
+    assert captured["limit"] == 4 * 1024 * 1024 + 1
+
+
+def test_lan_camera_rejects_wrong_camera_identity(monkeypatch):
+    payload = json.dumps(
+        {
+            "camera_id": "wrong-camera",
+            "captured_at": 123.5,
+            "media_type": "image/jpeg",
+            "data_base64": b64encode(b"\xff\xd8\xffjpeg").decode("ascii"),
+        }
+    ).encode()
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self, limit):
+            return payload
+
+    monkeypatch.setattr(
+        "moira.edge_components.urllib.request.urlopen", lambda request, timeout: Response()
+    )
+    source = LanCameraSource(
+        "http://robot-brain.local:8765/v1/camera",
+        token="secret",
+        camera_id="co6-usb",
+    )
+    with pytest.raises(RuntimeError, match="identity"):
+        source.capture()
+
+
 def test_alsa_recorder_emits_wav_without_a_fallback(monkeypatch):
     calls = []
 
@@ -102,6 +175,7 @@ def test_required_camera_verification_blocks_before_component_invocation():
         instruction="move the block",
         robot_state=RobotState({"left": (0.0, 0.0, 0.0)}, {"left": 0.05}, time()),
         execute=True,
+        execution_confirmed=True,
     )
     with pytest.raises(RuntimeError, match="post-action camera"):
         system.run(request)

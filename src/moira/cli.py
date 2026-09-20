@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .backends import (
@@ -14,17 +16,34 @@ from .backends import (
     SentenceTransformerEncoder,
     TransformersGenerator,
 )
+from .baseten_status import inspect_baseten_deployments
+from .calibration import (
+    apply_servo_calibration_file,
+    write_json_atomic,
+    write_servo_calibration_template,
+)
+from .cloud import load_runtime_environment
 from .demo import run_demo
-from .edge_components import AlsaCommandRecorder, OpenCVCameraSource
+from .edge_components import AlsaCommandRecorder, LanCameraSource, OpenCVCameraSource
 from .edge_demo import run_edge_demo
+from .episode_dataset import (
+    create_camera_calibration_template,
+    initialize_episode_dataset,
+)
 from .evaluation import evaluate_routing, load_samples
 from .experts import ExpertRegistry
-from .physical import ClarificationResult, RobotState
+from .human_interaction import (
+    HumanAwarePhysicalSession,
+    PlanProposal,
+    SpokenEmergencyStopMonitor,
+)
+from .physical import ClarificationResult, EmergencyStopResult, RobotState
 from .pi import PiRuntimeProfile, inspect_host
 from .production import (
     build_physical_session,
     inspect_physical_runtime,
     load_physical_runtime_config,
+    prepare_physical_workspace,
 )
 from .robot_config import load_robot_model
 from .robot_sources import inspect_3mf
@@ -35,6 +54,10 @@ from .routing import (
     PromptExample,
     PromptRouter,
     PrototypeEmbeddingRouter,
+)
+from .simulation_training import (
+    create_simulation_training_template,
+    simulation_training_preflight,
 )
 
 
@@ -133,12 +156,68 @@ def main(argv: list[str] | None = None) -> int:
     robot_check.add_argument("model", type=Path)
     robot_check.add_argument("--verify-source", action="store_true")
     robot_check.add_argument("--require-motion-ready", action="store_true")
+    calibration_template = commands.add_parser(
+        "servo-calibration-template",
+        help="Create a strict measurement template for one installed physical arm",
+    )
+    calibration_template.add_argument("model", type=Path)
+    calibration_template.add_argument("output", type=Path)
+    calibration_template.add_argument("--arm", choices=("left", "right"), default="left")
+    calibration_apply = commands.add_parser(
+        "servo-calibration-apply",
+        help="Validate and atomically apply a completed servo calibration record",
+    )
+    calibration_apply.add_argument("model", type=Path)
+    calibration_apply.add_argument("calibration", type=Path)
+    calibration_apply.add_argument("--output", required=True, type=Path)
+    calibration_apply.add_argument("--packaged-output", type=Path)
+    camera_template = commands.add_parser(
+        "camera-calibration-template",
+        help="Create an unset intrinsic and camera-to-base calibration record",
+    )
+    camera_template.add_argument("model", type=Path)
+    camera_template.add_argument("output", type=Path)
+    camera_template.add_argument("--camera-id", default="co6-usb")
+    dataset_init = commands.add_parser(
+        "episode-dataset-init",
+        help="Initialize a training dataset pinned to robot, servo, and camera calibration",
+    )
+    dataset_init.add_argument("root", type=Path)
+    dataset_init.add_argument("--model", required=True, type=Path)
+    dataset_init.add_argument("--servo-calibration", required=True, type=Path)
+    dataset_init.add_argument("--camera-calibration", required=True, type=Path)
+    simulation_template = commands.add_parser(
+        "simulation-training-template",
+        help="Create a dynamics template pinned to the current CAD-derived MuJoCo model",
+    )
+    simulation_template.add_argument("model", type=Path)
+    simulation_template.add_argument("mujoco", type=Path)
+    simulation_template.add_argument("output", type=Path)
+    simulation_preflight = commands.add_parser(
+        "simulation-training-preflight",
+        help="Report missing measurements before physics rollout generation or training",
+    )
+    simulation_preflight.add_argument("model", type=Path)
+    simulation_preflight.add_argument("mujoco", type=Path)
+    simulation_preflight.add_argument("--servo-calibration", required=True, type=Path)
+    simulation_preflight.add_argument("--camera-calibration", required=True, type=Path)
+    simulation_preflight.add_argument("--simulation-config", required=True, type=Path)
     physical_preflight = commands.add_parser(
         "physical-preflight",
         help="Check CAD, calibration, camera dependency, and Baseten endpoint readiness",
     )
     physical_preflight.add_argument(
         "--config", type=Path, default=Path("config/pi4_runtime.json")
+    )
+    baseten_status = commands.add_parser(
+        "baseten-status",
+        help="Inspect configured Baseten IDs and read live deployment status without inference",
+    )
+    baseten_status.add_argument(
+        "--config", type=Path, default=Path("config/pi4_runtime.json")
+    )
+    baseten_status.add_argument(
+        "--offline", action="store_true", help="Report configuration without calling Baseten"
     )
     physical_run = commands.add_parser(
         "physical-run",
@@ -156,8 +235,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Record a spoken WAV command from the Pi ALSA microphone",
     )
     physical_run.add_argument("--user-id", default="demo-user")
-    physical_run.add_argument("--camera", default="0", help="USB camera index or device path")
-    physical_run.add_argument("--camera-id", default="co6-usb")
+    physical_run.add_argument("--camera", help="USB camera index or device path")
+    physical_run.add_argument(
+        "--camera-url",
+        help="Authenticated laptop camera endpoint, for example http://HOST:8765/v1/camera",
+    )
+    physical_run.add_argument("--camera-id")
     physical_run.add_argument("--audio-device", help="Optional ALSA capture device name")
     physical_run.add_argument("--workspace", type=Path, help="JSON workspace context")
     physical_run.add_argument("--robot-state", type=Path, help="Measured robot-state JSON")
@@ -208,7 +291,14 @@ def main(argv: list[str] | None = None) -> int:
         "physical-demo",
         "pi-check",
         "robot-model-check",
+        "servo-calibration-template",
+        "servo-calibration-apply",
+        "camera-calibration-template",
+        "episode-dataset-init",
+        "simulation-training-template",
+        "simulation-training-preflight",
         "physical-preflight",
+        "baseten-status",
         "physical-run",
     ):
         if args.router != "hybrid" and (args.fallback_model or args.fallback_revision):
@@ -278,12 +368,94 @@ def main(argv: list[str] | None = None) -> int:
                 "readiness_issues": model.readiness_issues,
                 "bimanual_readiness_issues": model.bimanual_readiness_issues,
             }
+        elif args.command == "servo-calibration-template":
+            write_servo_calibration_template(args.model, args.arm, args.output)
+            output = {
+                "status": "template_created",
+                "arm": args.arm,
+                "output": str(args.output.resolve()),
+                "hardware_commanded": False,
+            }
+        elif args.command == "servo-calibration-apply":
+            updated = apply_servo_calibration_file(
+                args.model,
+                args.calibration,
+                args.output,
+                args.packaged_output,
+            )
+            model = load_robot_model(args.output)
+            output = {
+                "status": "calibration_applied",
+                "robot_model_id": updated["model_id"],
+                "output": str(args.output.resolve()),
+                "packaged_output": (
+                    str(args.packaged_output.resolve()) if args.packaged_output else None
+                ),
+                "motion_ready": model.motion_ready,
+                "remaining_readiness_issues": model.readiness_issues,
+            }
+        elif args.command == "camera-calibration-template":
+            model_value = _json_mapping(args.model, "robot model")
+            write_json_atomic(
+                args.output,
+                create_camera_calibration_template(model_value, args.camera_id),
+            )
+            output = {
+                "status": "template_created",
+                "camera_id": args.camera_id,
+                "output": str(args.output.resolve()),
+                "hardware_commanded": False,
+            }
+        elif args.command == "episode-dataset-init":
+            created_at = datetime.now(timezone.utc).isoformat()
+            manifest = initialize_episode_dataset(
+                args.root,
+                args.model,
+                args.servo_calibration,
+                args.camera_calibration,
+                created_at=created_at,
+            )
+            output = {
+                "status": "dataset_initialized",
+                "root": str(args.root.resolve()),
+                "manifest": manifest,
+            }
+        elif args.command == "simulation-training-template":
+            model_value = _json_mapping(args.model, "robot model")
+            write_json_atomic(
+                args.output,
+                create_simulation_training_template(model_value, args.mujoco),
+            )
+            output = {
+                "status": "template_created",
+                "output": str(args.output.resolve()),
+                "training_started": False,
+            }
+        elif args.command == "simulation-training-preflight":
+            output = simulation_training_preflight(
+                args.model,
+                args.mujoco,
+                args.servo_calibration,
+                args.camera_calibration,
+                args.simulation_config,
+            )
         elif args.command == "physical-preflight":
             output = inspect_physical_runtime(load_physical_runtime_config(args.config))
+        elif args.command == "baseten-status":
+            output = inspect_baseten_deployments(
+                load_physical_runtime_config(args.config), live=not args.offline
+            )
         elif args.command == "physical-run":
+            load_runtime_environment()
             config = load_physical_runtime_config(args.config)
+            camera_id = args.camera_id or config.camera.camera_id
             workspace = (
                 _json_mapping(args.workspace, "workspace") if args.workspace is not None else {}
+            )
+            workspace = prepare_physical_workspace(
+                config,
+                workspace,
+                camera_id=camera_id,
             )
             state = _robot_state(args.robot_state)
             if args.execute and state is None:
@@ -298,21 +470,103 @@ def main(argv: list[str] | None = None) -> int:
                 audio = AlsaCommandRecorder(device=args.audio_device).record(
                     args.record_seconds
                 )
-            camera = OpenCVCameraSource(
-                _camera_device(args.camera),
-                camera_id=args.camera_id,
-            )
-            with build_physical_session(config, (camera,)) as session:
-                result = session.run(
-                    user_id=args.user_id,
-                    instruction=args.instruction,
-                    audio=audio,
-                    workspace=workspace,
-                    robot_state=state,
-                    execute=args.execute,
-                    speak=args.speak,
+            camera_url = args.camera_url
+            if camera_url is None and config.camera.transport == "lan_http":
+                camera_url = os.environ.get(config.camera.url_env or "")
+            if camera_url:
+                token = os.environ.get(config.camera.token_env or "MOIRA_LAN_TOKEN")
+                if not token:
+                    required = config.camera.token_env or "MOIRA_LAN_TOKEN"
+                    raise RuntimeError(f"Set {required} before using the LAN camera")
+                camera = LanCameraSource(
+                    camera_url,
+                    token=token,
+                    camera_id=camera_id,
                 )
-            if isinstance(result, ClarificationResult):
+            else:
+                if config.camera.transport == "lan_http":
+                    required = config.camera.url_env or "MOIRA_CAMERA_URL"
+                    raise RuntimeError(f"Set {required} before using the LAN camera")
+                camera_device = args.camera or os.environ.get(
+                    config.camera.device_env or ""
+                )
+                if not camera_device:
+                    raise RuntimeError(
+                        f"Set {config.camera.device_env} to the verified CO6 device "
+                        "or pass --camera explicitly"
+                    )
+                camera = OpenCVCameraSource(
+                    _camera_device(camera_device),
+                    camera_id=camera_id,
+                )
+            with build_physical_session(config, (camera,)) as session:
+                if args.execute:
+                    conversation = HumanAwarePhysicalSession(
+                        session,
+                        user_id=args.user_id,
+                        workspace=workspace,
+                    )
+                    interaction = conversation.plan(
+                        instruction=args.instruction,
+                        audio=audio,
+                        robot_state=state,
+                        speak=args.speak,
+                    )
+                    while isinstance(interaction, (ClarificationResult, PlanProposal)):
+                        prompt = (
+                            interaction.question
+                            if isinstance(interaction, ClarificationResult)
+                            else interaction.prompt
+                        )
+                        response = input(prompt + "\nResponse: ")
+                        if isinstance(interaction, ClarificationResult):
+                            interaction = conversation.plan(
+                                instruction=response,
+                                robot_state=state,
+                                speak=args.speak,
+                            )
+                        else:
+                            stop_monitor = None
+                            if conversation.is_confirmation_response(response):
+                                stop_recorder = AlsaCommandRecorder(device=args.audio_device)
+                                stop_monitor = SpokenEmergencyStopMonitor(
+                                    lambda recorder=stop_recorder: recorder.record(1),
+                                    lambda payload: session.system.transcribe_audio(
+                                        payload, allow_empty=True
+                                    ),
+                                    lambda: conversation.emergency_stop(speak=False),
+                                )
+                                stop_monitor.start()
+                            try:
+                                interaction = conversation.respond(
+                                    confirmation_id=interaction.confirmation_id,
+                                    instruction=response,
+                                    robot_state=state,
+                                    speak=args.speak,
+                                )
+                            finally:
+                                if stop_monitor is not None:
+                                    stop_monitor.close()
+                    result = interaction
+                else:
+                    result = session.run(
+                        user_id=args.user_id,
+                        instruction=args.instruction,
+                        audio=audio,
+                        workspace=workspace,
+                        robot_state=state,
+                        execute=False,
+                        speak=args.speak,
+                    )
+            if isinstance(result, EmergencyStopResult):
+                output = {
+                    "status": "emergency_stop",
+                    "transcript": result.transcript,
+                    "response": result.response_text,
+                    "stop_issues": list(result.stop_issues),
+                    "journal": str(config.journal_path),
+                }
+            elif isinstance(result, ClarificationResult):
                 output = {
                     "status": "clarification",
                     "transcript": result.transcript,

@@ -13,5 +13,10 @@ weights:
     mount_location: /models/faster-whisper-large-v3-turbo
 requirements:
   - faster-whisper==1.2.1
+  - ctranslate2==4.6.3
+  - nvidia-cublas-cu12==12.8.4.1
+  - nvidia-cudnn-cu12==9.10.2.21
+environment_variables:
+  LD_LIBRARY_PATH: /usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib
 resources:
   instance_type: L4:4x16

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Modular instruction routing and specialist policy serving for robotics"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["python-dotenv>=1.0,<2"]
+dependencies = ["python-dotenv>=1.0,<2", "rich>=13.9,<15"]
 
 [project.optional-dependencies]
 embeddings = ["sentence-transformers>=3.4,<6"]
@@ -16,10 +16,17 @@ prompt = ["transformers>=4.56,<6", "torch>=2.6,<3"]
 adapters = ["peft>=0.15,<1", "torch>=2.6,<3"]
 hardware = ["Adafruit-Blinka>=9,<10", "adafruit-circuitpython-pca9685>=3.4.22,<4"]
 camera = ["opencv-python-headless>=4.10,<5"]
+rtx-voice = [
+    "faster-whisper==1.2.1",
+    "ctranslate2==4.6.3",
+    "kokoro==0.9.4",
+    "soundfile>=0.13,<1",
+]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 
 [project.scripts]
 moira = "moira.cli:main"
+moira-pi-controller = "moira.robot_link:controller_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

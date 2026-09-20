@@ -1,0 +1,235 @@
+{
+  "schema_version": 5,
+  "model_id": "three-actuator-desktop-arm-v2",
+  "source_file": "../../4+DOF+Robotic+Arm+(SG90,+MG996R,+Arduino)/Sharma_Ishaan_robotAssem.SLDASM",
+  "source_sha256": "bc5ad54ea950fa068b1c95d26e907497d43277aab97aa67eb58ef610bfd86df5",
+  "source_manifest": "source_manifest.json",
+  "print_file": "../../Robotic+Arm.3mf",
+  "servo_count": 3,
+  "payload_limit_kg": null,
+  "coordinate_frame": {
+    "ground_plane": "XZ",
+    "up_axis": "Y"
+  },
+  "components": [
+    "fixed_base",
+    "turntable",
+    "upper_arm",
+    "forearm",
+    "end_effector"
+  ],
+  "joints": [
+    {
+      "name": "J1_BASE_YAW",
+      "role": "kinematic",
+      "actuator_model": "MG996R",
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "lower_deg": null,
+      "upper_deg": null,
+      "home_deg": null,
+      "origin_m": [
+        0.009649999999999997,
+        0.047349999914,
+        -3.3077924459677055e-16
+      ],
+      "max_velocity_deg_s": null
+    },
+    {
+      "name": "J2_SHOULDER",
+      "role": "kinematic",
+      "actuator_model": "MG996R",
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "lower_deg": null,
+      "upper_deg": null,
+      "home_deg": null,
+      "origin_m": [
+        0.006114149889921734,
+        0.0739898000308362,
+        -0.00540000000000032
+      ],
+      "max_velocity_deg_s": null
+    },
+    {
+      "name": "J3_GRIPPER",
+      "role": "gripper",
+      "actuator_model": "SG90",
+      "axis": [
+        0.7083182053511652,
+        0.7058932780301175,
+        0.0
+      ],
+      "lower_deg": null,
+      "upper_deg": null,
+      "home_deg": null,
+      "origin_m": [
+        0.18083815895279884,
+        0.10217658009775211,
+        -0.03530000000000039
+      ],
+      "max_velocity_deg_s": null
+    }
+  ],
+  "geometry": {
+    "upper_arm_m": 0.1541417717533589,
+    "forearm_m": 0.10010000000000002,
+    "shoulder_height_m": 0.0739898000308362
+  },
+  "bimanual_mount": {
+    "shoulder_offset_m": null
+  },
+  "control_limits": {
+    "trajectory_frequency_hz": null,
+    "required_clearance_m": null,
+    "max_gripper_width_m": null,
+    "max_gripper_velocity_m_s": null,
+    "max_gripper_force_n": null,
+    "controller_timeout_margin_s": null
+  },
+  "safety_limits": {
+    "max_slip_probability": null,
+    "max_collision_probability": null,
+    "min_grasp_stability_score": null
+  },
+  "servo_controller": {
+    "type": "pca9685",
+    "i2c_address": null,
+    "reference_clock_hz": null,
+    "pwm_frequency_hz": null,
+    "servo_supply_voltage": 6.0,
+    "servo_supply_current_a": 10.0,
+    "servo_power_validated": false,
+    "output_enable_validated": false,
+    "arm_installations": {
+      "left": {
+        "physical_id": "arm_1",
+        "installed": true
+      },
+      "right": {
+        "physical_id": "arm_2",
+        "installed": false
+      }
+    },
+    "actuators": {
+      "left": {
+        "J1_BASE_YAW": {
+          "channel": 0,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        },
+        "J2_SHOULDER": {
+          "channel": 1,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        },
+        "J3_GRIPPER": {
+          "channel": 3,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        }
+      },
+      "right": {
+        "J1_BASE_YAW": {
+          "channel": null,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        },
+        "J2_SHOULDER": {
+          "channel": null,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        },
+        "J3_GRIPPER": {
+          "channel": null,
+          "pulse_at_lower_us": null,
+          "pulse_at_upper_us": null
+        }
+      }
+    }
+  },
+  "meshes": {
+    "end_effector": "meshes/end_effector.stl",
+    "fixed_base": "meshes/fixed_base.stl",
+    "forearm": "meshes/forearm.stl",
+    "turntable": "meshes/turntable.stl",
+    "upper_arm": "meshes/upper_arm.stl"
+  },
+  "mesh_scale_to_m": 1.0,
+  "calibration_complete": false,
+  "kinematics_validated": false,
+  "collision_geometry_validated": false,
+  "actuator_mapping_validated": false,
+  "payload_validated": false,
+  "blockers": [
+    "the physical elbow is unactuated and its locked pose must be measured against the CAD export",
+    "the two-axis yaw/shoulder kinematics and reachable fixed-link arc require physical validation",
+    "servo-library command degrees must be converted to measured PWM pulse endpoints",
+    "the shoulder linkage must be tightened before measuring limits or speed",
+    "the shoulder drops rapidly as its servo command increases, so guarded velocity must be measured",
+    "gripper aperture at commands 180 and 110 and a safe pressure floor below 110 must be measured",
+    "the actual SG90 and MG996R dimensions must be checked against the included CAD servo models",
+    "the gripper-servo supply-voltage rating must be confirmed before using the 6 V servo rail",
+    "Fusion STL bounds exclude non-meshable or hidden CAD geometry: Sharma_Ishaan_rotateBase:1",
+    "physical dimensions, collision clearances, masses, inertia, friction, and actuator dynamics require validation before physics training"
+  ],
+  "fusion_mesh_validation": {
+    "source_stl_scale_to_m": 0.001,
+    "bounds_tolerance_m": 0.0001,
+    "matched_occurrences": 36,
+    "total_occurrences": 37,
+    "bounds_outliers_m": {
+      "Sharma_Ishaan_rotateBase:1": 0.061166271223438685
+    }
+  },
+  "fusion_export": "../../four_dof_desktop_arm_export/fusion_robot_export.json",
+  "gripper_mechanism": {
+    "primary_joint": "J3_GRIPPER",
+    "mirror_joint": "J4_END_EFFECTOR_MIRROR",
+    "gear_ratio": -1.0,
+    "mirror_origin_m": [
+      0.18430916065175185,
+      0.10577687830843756,
+      -0.005750000000001755
+    ],
+    "mirror_axis": [
+      0.7083182053511653,
+      0.7058932780301173,
+      0.0
+    ],
+    "meshes": {
+      "fixed": "meshes/gripper_fixed.stl",
+      "primary": "meshes/gripper_primary.stl",
+      "mirror": "meshes/gripper_mirror.stl"
+    }
+  },
+  "mujoco_validation": {
+    "model": "kinematic_validation.xml",
+    "report": "mujoco_validation.json",
+    "scope": "cad_geometry_only_not_current_three_actuator_topology",
+    "mujoco_version": "3.13.0",
+    "steps": 100,
+    "finite_state": true,
+    "visual_reviewed": true,
+    "actuation_validated": false
+  },
+  "kinematics": {
+    "layout": "yaw_shoulder_fixed_link",
+    "effective_reach_m": 0.17949090203557688,
+    "fixed_link_reach_tolerance_m": null,
+    "derivation": "CAD shoulder-to-gripper distance in the exported fixed-elbow assembly pose"
+  },
+  "physical_actuation": {
+    "actuator_count": 3,
+    "unused_pca9685_channels": [
+      2
+    ],
+    "observation_record": "../../config/arm1_servo_observations.json"
+  }
+}

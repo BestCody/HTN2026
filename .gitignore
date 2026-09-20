@@ -26,6 +26,7 @@ mlruns/
 lightning_logs/
 *.log
 .cache/
+.model-cache/
 
 # Local credentials and user-specific runtime state
 .env

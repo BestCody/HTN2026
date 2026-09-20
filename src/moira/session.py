@@ -15,8 +15,11 @@ from uuid import uuid4
 
 from .physical import (
     CameraSource,
+    CandidatePlan,
     ClarificationResult,
     DialogueTurn,
+    EmergencyStopResult,
+    GroundedIntent,
     PhysicalAI,
     PhysicalAIResult,
     RobotState,
@@ -56,6 +59,12 @@ class JsonlRunJournal:
             "instruction": request.instruction,
             "audio_bytes": len(request.audio) if request.audio is not None else None,
             "execute": request.execute,
+            "execution_confirmed": request.execution_confirmed,
+            "confirmed_plan_id": (
+                request.confirmed_candidate.id
+                if request.confirmed_candidate is not None
+                else None
+            ),
             "speak": request.speak,
             "workspace": _json_value(dict(request.workspace or {})),
             "cameras": [
@@ -91,7 +100,7 @@ class JsonlRunJournal:
         run_id: str,
         started_at: float,
         request: TaskRequest,
-        result: PhysicalAIResult | ClarificationResult,
+        result: PhysicalAIResult | ClarificationResult | EmergencyStopResult,
         robot_model_id: str,
     ) -> None:
         completed_at = time()
@@ -104,7 +113,18 @@ class JsonlRunJournal:
             "robot_model_id": robot_model_id,
             "request": self._request_record(request),
         }
-        if isinstance(result, ClarificationResult):
+        if isinstance(result, EmergencyStopResult):
+            common["status"] = "emergency_stop"
+            common["result"] = {
+                "transcript": result.transcript,
+                "response_text": result.response_text,
+                "response_audio_bytes": (
+                    len(result.response_audio) if result.response_audio is not None else None
+                ),
+                "stop_issues": list(result.stop_issues),
+                "routing": _json_value(result.routing),
+            }
+        elif isinstance(result, ClarificationResult):
             common["status"] = "clarification"
             common["result"] = {
                 "transcript": result.transcript,
@@ -120,6 +140,7 @@ class JsonlRunJournal:
                 "intent": _json_value(result.intent),
                 "personal": _json_value(result.personal),
                 "world_before": _json_value(result.world),
+                "world_pre_execute": _json_value(result.world_pre_execute),
                 "world_after": _json_value(result.world_after),
                 "candidates": _json_value(result.candidates),
                 "simulations": _json_value(result.simulations),
@@ -193,8 +214,11 @@ class PhysicalSession:
         friction_coefficient: float | None = None,
         robot_state: RobotState | None = None,
         execute: bool = False,
+        execution_confirmed: bool = False,
         speak: bool = True,
-    ) -> PhysicalAIResult | ClarificationResult:
+        confirmed_intent: GroundedIntent | None = None,
+        confirmed_candidate: CandidatePlan | None = None,
+    ) -> PhysicalAIResult | ClarificationResult | EmergencyStopResult:
         started_at = time()
         if not math.isfinite(started_at):
             raise RuntimeError("System clock did not return a finite timestamp")
@@ -210,12 +234,18 @@ class PhysicalSession:
             friction_coefficient=friction_coefficient,
             robot_state=robot_state,
             execute=execute,
+            execution_confirmed=execution_confirmed,
             speak=speak,
+            confirmed_intent=confirmed_intent,
+            confirmed_candidate=confirmed_candidate,
         )
         run_id = uuid4().hex
         try:
             result = self.system.run(
                 request,
+                pre_action_capture=(
+                    (lambda: capture_frames(self.cameras)) if execute else None
+                ),
                 post_action_capture=(
                     (lambda: capture_frames(self.cameras)) if execute else None
                 ),

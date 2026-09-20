@@ -45,6 +45,10 @@ def test_whisper_deployment_uses_l4_and_turbo_checkpoint():
     config = Path("deploy/baseten_whisper/config.yaml").read_text(encoding="utf-8")
     assert "instance_type: L4:4x16" in config
     assert "faster-whisper-large-v3-turbo" in config
+    assert "ctranslate2==4.6.3" in config
+    assert "nvidia-cublas-cu12==12.8.4.1" in config
+    assert "nvidia-cudnn-cu12==9.10.2.21" in config
+    assert "nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib" in config
     assert "RTX-PRO-6000" not in config
 
 

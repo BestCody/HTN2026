@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "robot_model_id": "four-dof-desktop-arm-v1",
+  "robot_source_sha256": "bc5ad54ea950fa068b1c95d26e907497d43277aab97aa67eb58ef610bfd86df5",
+  "camera_id": "co6-usb",
+  "captured_at": null,
+  "resolution_px": null,
+  "camera_matrix": null,
+  "distortion_coefficients": null,
+  "camera_to_base_matrix": null,
+  "workspace": {
+    "table_height_m": null,
+    "bounds_base_frame_m": null
+  }
+}

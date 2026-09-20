@@ -18,7 +18,7 @@ class PiRuntimeProfile:
     camera_width: int = 640
     camera_height: int = 480
     camera_fps: int = 10
-    cloud_timeout_seconds: float = 20.0
+    cloud_timeout_seconds: float = 300.0
 
     def __post_init__(self) -> None:
         integers = (

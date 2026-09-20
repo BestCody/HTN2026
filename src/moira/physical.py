@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, wait
-from dataclasses import dataclass, field
-from threading import Lock
+from dataclasses import dataclass, field, fields, is_dataclass
+from threading import Event, Lock
+from time import monotonic
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
@@ -24,10 +26,40 @@ MANIPULATION_POLICY_CAPABILITIES = (
     "manipulation.skill.handover",
 )
 
+_STOP_WORDS = frozenset(("stop", "cancel", "abort", "freeze", "halt", "pause", "wait"))
+_STOP_PHRASES = frozenset(
+    ("do not move", "dont move", "hold position", "hold on", "never mind", "nevermind")
+)
+
 
 def _nonempty(value: Any, name: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
+
+
+def is_emergency_stop_command(text: str) -> bool:
+    """Recognize a small local stop vocabulary without consulting a cloud model."""
+
+    _nonempty(text, "Stop command text")
+    normalized = " ".join(re.findall(r"[a-z0-9]+", text.casefold()))
+    words = set(normalized.split())
+    return normalized in _STOP_PHRASES or bool(words & _STOP_WORDS)
+
+
+def _wire_equivalent(value: Any) -> Any:
+    """Canonicalize typed values after a JSON request/response round trip."""
+
+    if is_dataclass(value) and not isinstance(value, type):
+        return tuple(
+            (item.name, _wire_equivalent(getattr(value, item.name))) for item in fields(value)
+        )
+    if isinstance(value, Mapping):
+        return tuple(
+            sorted((str(key), _wire_equivalent(item)) for key, item in value.items())
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_wire_equivalent(item) for item in value)
+    return value
 
 
 @dataclass(frozen=True)
@@ -108,6 +140,81 @@ class WorldState:
             not isinstance(item, str) or not item.strip() for item in self.hazards
         ):
             raise ValueError("World hazards must be strings")
+
+
+class SceneChangedError(RuntimeError):
+    """The observed task scene changed after planning and before motor authority."""
+
+
+class ConfirmedPlanChangedError(RuntimeError):
+    """Fresh planning no longer matches the intent and plan the user confirmed."""
+
+
+@dataclass(frozen=True)
+class SceneRevalidationReport:
+    target_drift_m: Mapping[str, float]
+    maximum_allowed_drift_m: float
+
+
+def validate_pre_execution_scene(
+    before: WorldState,
+    after: WorldState,
+    target_ids: tuple[str, ...],
+    maximum_drift_m: float,
+) -> SceneRevalidationReport:
+    """Reject missing, moved, or newly hazardous scenes before motor execution."""
+
+    if not isinstance(before, WorldState) or not isinstance(after, WorldState):
+        raise TypeError("Scene revalidation requires two WorldState values")
+    if before.coordinate_frame != after.coordinate_frame or before.up_axis != after.up_axis:
+        raise SceneChangedError("Scene coordinate frame changed after planning")
+    if (
+        not isinstance(target_ids, tuple)
+        or len(set(target_ids)) != len(target_ids)
+        or any(not isinstance(target_id, str) or not target_id.strip() for target_id in target_ids)
+    ):
+        raise ValueError("Scene revalidation requires unique target IDs")
+    if (
+        not isinstance(maximum_drift_m, (int, float))
+        or isinstance(maximum_drift_m, bool)
+        or not math.isfinite(maximum_drift_m)
+        or maximum_drift_m <= 0
+    ):
+        raise ValueError("maximum_drift_m must be finite and positive")
+    before_by_id = {item.id: item for item in before.objects}
+    after_by_id = {item.id: item for item in after.objects}
+    missing_targets = sorted(set(target_ids) - set(after_by_id))
+    drift_by_target = {
+        target_id: math.dist(
+            before_by_id[target_id].position_m,
+            after_by_id[target_id].position_m,
+        )
+        for target_id in set(target_ids) & set(before_by_id) & set(after_by_id)
+    }
+    moved_targets = {
+        target_id: drift
+        for target_id, drift in drift_by_target.items()
+        if drift > maximum_drift_m
+    }
+    new_hazards = tuple(sorted(set(after.hazards) - set(before.hazards)))
+    if missing_targets or moved_targets or new_hazards:
+        reasons = []
+        if missing_targets:
+            reasons.append("missing targets: " + ", ".join(missing_targets))
+        if moved_targets:
+            reasons.append(
+                "moved targets: "
+                + ", ".join(
+                    f"{target_id}={drift:.3f}m"
+                    for target_id, drift in sorted(moved_targets.items())
+                )
+            )
+        if new_hazards:
+            reasons.append("new hazards: " + ", ".join(new_hazards))
+        raise SceneChangedError(
+            "Scene changed after planning; execution blocked: " + "; ".join(reasons)
+        )
+    return SceneRevalidationReport(drift_by_target, float(maximum_drift_m))
 
 
 @dataclass(frozen=True)
@@ -338,6 +445,7 @@ class GroundedIntent:
     transcript: str
     action: str
     target_object_ids: tuple[str, ...]
+    object_roles: Mapping[str, str]
     constraints: tuple[str, ...] = ()
     needs_clarification: bool = False
     clarification_question: str | None = None
@@ -351,6 +459,22 @@ class GroundedIntent:
             raise ValueError("Intent target_object_ids must be a tuple of IDs")
         if len(set(self.target_object_ids)) != len(self.target_object_ids):
             raise ValueError("Intent target_object_ids must be unique")
+        allowed_roles = {
+            "manipulated",
+            "destination",
+            "tool",
+            "recipient",
+            "support",
+            "context",
+        }
+        if (
+            not isinstance(self.object_roles, Mapping)
+            or set(self.object_roles) != set(self.target_object_ids)
+            or any(role not in allowed_roles for role in self.object_roles.values())
+        ):
+            raise ValueError(
+                "Intent object_roles must assign every target a supported physical role"
+            )
         if not isinstance(self.constraints, tuple) or any(
             not isinstance(value, str) or not value.strip() for value in self.constraints
         ):
@@ -361,6 +485,22 @@ class GroundedIntent:
             _nonempty(self.clarification_question, "Clarification question")
         elif self.clarification_question is not None:
             raise ValueError("A resolved intent cannot contain a clarification question")
+
+    @property
+    def manipulated_object_ids(self) -> tuple[str, ...]:
+        return tuple(
+            object_id
+            for object_id in self.target_object_ids
+            if self.object_roles[object_id] in ("manipulated", "tool")
+        )
+
+    @property
+    def destination_object_ids(self) -> tuple[str, ...]:
+        return tuple(
+            object_id
+            for object_id in self.target_object_ids
+            if self.object_roles[object_id] in ("destination", "recipient", "support")
+        )
 
 
 def _finite_tuple(value: tuple[float, ...], length: int, name: str) -> None:
@@ -1227,7 +1367,10 @@ class TaskRequest:
     friction_coefficient: float | None = None
     robot_state: RobotState | None = None
     execute: bool = False
+    execution_confirmed: bool = False
     speak: bool = True
+    confirmed_intent: GroundedIntent | None = None
+    confirmed_candidate: CandidatePlan | None = None
 
     def __post_init__(self) -> None:
         _nonempty(self.user_id, "user_id")
@@ -1260,12 +1403,32 @@ class TaskRequest:
             raise ValueError("Tactile samples require a measured friction_coefficient")
         if self.robot_state is not None and not isinstance(self.robot_state, RobotState):
             raise TypeError("robot_state must be a RobotState or null")
-        if not isinstance(self.execute, bool) or not isinstance(self.speak, bool):
-            raise TypeError("execute and speak must be boolean")
+        if (
+            not isinstance(self.execute, bool)
+            or not isinstance(self.execution_confirmed, bool)
+            or not isinstance(self.speak, bool)
+        ):
+            raise TypeError("execute, execution_confirmed, and speak must be boolean")
         if self.execute and self.robot_state is None:
             raise ValueError("Physical execution requires a robot_state")
         if self.execute and self.robot_state is not None and self.robot_state.observed_at <= 0:
             raise ValueError("Physical execution requires a timestamped robot_state")
+        if self.execute and not self.execution_confirmed:
+            raise ValueError("Physical execution requires explicit plan confirmation")
+        if (self.confirmed_intent is None) != (self.confirmed_candidate is None):
+            raise ValueError("Confirmed intent and candidate must be supplied together")
+        if self.confirmed_intent is not None and (
+            not self.execute or not self.execution_confirmed
+        ):
+            raise ValueError("Plan bindings are only valid for confirmed physical execution")
+        if self.confirmed_intent is not None and not isinstance(
+            self.confirmed_intent, GroundedIntent
+        ):
+            raise TypeError("confirmed_intent must be a GroundedIntent")
+        if self.confirmed_candidate is not None and not isinstance(
+            self.confirmed_candidate, CandidatePlan
+        ):
+            raise TypeError("confirmed_candidate must be a CandidatePlan")
 
 
 @dataclass(frozen=True)
@@ -1368,12 +1531,15 @@ class ControlInput:
     policy: PolicyPlan | None = None
     trajectory: MotionTrajectory | None = None
     tactile: GraspStability | None = None
+    execution_guard: Callable[[PlanStep, tuple[str, ...]], None] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.plan, FinalPlan) or not isinstance(self.world, WorldState):
             raise TypeError("Control requires a typed final plan and world state")
         if not isinstance(self.execute, bool):
             raise TypeError("Control execute must be boolean")
+        if self.execution_guard is not None and not callable(self.execution_guard):
+            raise TypeError("Control execution_guard must be callable or null")
         if (self.policy is None) != (self.trajectory is None):
             raise ValueError("Control policy and trajectory must be supplied together")
         if self.policy is not None:
@@ -1460,6 +1626,7 @@ class PhysicalAIResult:
     failure: FailureReport | None = None
     load: LoadEstimate | None = None
     prediction_error: PredictionErrorReport | None = None
+    world_pre_execute: WorldState | None = None
     world_after: WorldState | None = None
 
 
@@ -1471,6 +1638,58 @@ class ClarificationResult:
     personal: PersonalContext
     response_audio: bytes | None
     routing: tuple[ComponentDecision, ...]
+
+
+@dataclass(frozen=True)
+class EmergencyStopResult:
+    transcript: str
+    response_text: str
+    response_audio: bytes | None
+    stop_issues: tuple[str, ...]
+    routing: tuple[ComponentDecision, ...]
+
+    def __post_init__(self) -> None:
+        _nonempty(self.transcript, "Emergency-stop transcript")
+        _nonempty(self.response_text, "Emergency-stop response")
+        if self.response_audio is not None and not isinstance(self.response_audio, bytes):
+            raise TypeError("Emergency-stop response_audio must be bytes or null")
+        if not isinstance(self.stop_issues, tuple) or any(
+            not isinstance(issue, str) or not issue.strip() for issue in self.stop_issues
+        ):
+            raise TypeError("Emergency-stop issues must contain non-empty strings")
+        if not isinstance(self.routing, tuple) or any(
+            not isinstance(item, ComponentDecision) for item in self.routing
+        ):
+            raise TypeError("Emergency-stop routing must contain ComponentDecision values")
+
+
+@dataclass(frozen=True)
+class PipelineEvent:
+    """One bounded observability event from the typed physical-AI workflow."""
+
+    kind: str
+    elapsed_seconds: float
+    layer: Layer | None = None
+    capability: str | None = None
+    component_id: str | None = None
+    model: str | None = None
+    runtime: str | None = None
+    router: str | None = None
+    details: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _nonempty(self.kind, "Pipeline event kind")
+        if (
+            not isinstance(self.elapsed_seconds, (int, float))
+            or isinstance(self.elapsed_seconds, bool)
+            or not math.isfinite(self.elapsed_seconds)
+            or self.elapsed_seconds < 0
+        ):
+            raise ValueError("Pipeline event elapsed_seconds must be finite and nonnegative")
+        if self.layer is not None and not isinstance(self.layer, Layer):
+            raise TypeError("Pipeline event layer must be a Layer or null")
+        if not isinstance(self.details, Mapping):
+            raise TypeError("Pipeline event details must be a mapping")
 
 
 class PhysicalAI:
@@ -1486,6 +1705,7 @@ class PhysicalAI:
         gripper_geometry: Mapping[str, Any],
         available_arms: tuple[str, ...] = ("left", "right"),
         require_camera_verification: bool = False,
+        event_sink: Callable[[PipelineEvent], None] | None = None,
     ) -> None:
         if not isinstance(registry, ComponentRegistry):
             raise TypeError("registry must be a ComponentRegistry")
@@ -1515,6 +1735,9 @@ class PhysicalAI:
         if not isinstance(require_camera_verification, bool):
             raise TypeError("require_camera_verification must be boolean")
         self.require_camera_verification = require_camera_verification
+        if event_sink is not None and not callable(event_sink):
+            raise TypeError("event_sink must be callable or null")
+        self.event_sink = event_sink
 
     @classmethod
     def from_robot_model(
@@ -1525,6 +1748,7 @@ class PhysicalAI:
         router: ComponentRouter | None = None,
         profile: PiRuntimeProfile | None = None,
         require_camera_verification: bool = False,
+        event_sink: Callable[[PipelineEvent], None] | None = None,
     ) -> PhysicalAI:
         robot_model.require_motion_ready()
         return cls(
@@ -1538,20 +1762,59 @@ class PhysicalAI:
             },
             available_arms=robot_model.servo_controller.installed_arms,
             require_camera_verification=require_camera_verification,
+            event_sink=event_sink,
         )
+
+    def emergency_stop(self) -> tuple[str, ...]:
+        """Interrupt every currently loaded local control component."""
+
+        return self.registry.emergency_stop()
+
+    def transcribe_audio(self, audio: bytes, *, allow_empty: bool = False) -> str:
+        """Transcribe a conversational response without starting a robot task."""
+
+        decision = self.router.decide(
+            Layer.VOICE,
+            "voice.transcribe",
+            {"device": "raspberry-pi-4b", "routing_text": "Transcribe user response."},
+        )
+        result = self.registry.invoke(decision, SpeechInput(audio))
+        if not isinstance(result, str):
+            raise TypeError("Speech specialist returned a non-text conversational transcript")
+        if not result.strip() and not allow_empty:
+            raise ValueError("Speech specialist returned an empty conversational transcript")
+        return " ".join(result.strip().split())
+
+    def synthesize_speech(self, text: str, user_id: str) -> bytes:
+        """Synthesize an interaction prompt through the configured voice specialist."""
+
+        decision = self.router.decide(
+            Layer.VOICE,
+            "voice.synthesize",
+            {"device": "raspberry-pi-4b", "routing_text": "Speak interaction prompt."},
+        )
+        result = self.registry.invoke(decision, SpeechSynthesisInput(text, user_id))
+        if not isinstance(result, bytes) or not result:
+            raise ValueError("Voice synthesizer returned empty interaction audio")
+        return result
 
     def run(
         self,
         request: TaskRequest,
         *,
+        pre_action_capture: Callable[[], tuple[CameraFrame, ...]] | None = None,
         post_action_capture: Callable[[], tuple[CameraFrame, ...]] | None = None,
-    ) -> PhysicalAIResult | ClarificationResult:
+    ) -> PhysicalAIResult | ClarificationResult | EmergencyStopResult:
         if not isinstance(request, TaskRequest):
             raise TypeError("request must be a TaskRequest")
-        if request.execute and self.require_camera_verification and post_action_capture is None:
+        if request.execute and self.require_camera_verification and (
+            pre_action_capture is None or post_action_capture is None
+        ):
             raise RuntimeError(
-                "Physical execution requires a post-action camera capture for verification"
+                "Physical execution requires a pre-action camera capture and "
+                "post-action camera capture"
             )
+        run_started = monotonic()
         decisions: list[ComponentDecision] = []
         decisions_lock = Lock()
         route_context = {
@@ -1563,6 +1826,37 @@ class PhysicalAI:
             "available_arms": self.available_arms,
             "component_ram_budget_mb": self.profile.component_ram_budget_mb,
         }
+
+        def emit(
+            kind: str,
+            decision: ComponentDecision | None = None,
+            details: Mapping[str, Any] | None = None,
+        ) -> None:
+            if self.event_sink is None:
+                return
+            self.event_sink(
+                PipelineEvent(
+                    kind,
+                    monotonic() - run_started,
+                    layer=decision.layer if decision is not None else None,
+                    capability=decision.capability if decision is not None else None,
+                    component_id=decision.component_id if decision is not None else None,
+                    model=decision.model if decision is not None else None,
+                    runtime=decision.runtime if decision is not None else None,
+                    router=decision.router if decision is not None else None,
+                    details=dict(details or {}),
+                )
+            )
+
+        emit(
+            "pipeline.started",
+            details={
+                "execute": request.execute,
+                "audio": request.audio is not None,
+                "camera_count": len(request.frames),
+                "robot_model_id": self.robot_model_id,
+            },
+        )
 
         def invoke(
             layer: Layer,
@@ -1598,12 +1892,38 @@ class PhysicalAI:
                 )
             with decisions_lock:
                 decisions.append(decision)
-            result = self.registry.invoke(decision, payload)
+            emit(
+                "route.selected",
+                decision,
+                {"local_authority": local_authority},
+            )
+            component_started = monotonic()
+            emit("component.started", decision)
+            try:
+                result = self.registry.invoke(decision, payload)
+            except Exception as exc:
+                emit(
+                    "component.failed",
+                    decision,
+                    {
+                        "latency_seconds": monotonic() - component_started,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                raise
             if not isinstance(result, expected):
                 raise TypeError(
                     f"Component {decision.component_id} returned {type(result).__name__}; "
                     f"expected {expected.__name__}"
                 )
+            emit(
+                "component.completed",
+                decision,
+                {
+                    "latency_seconds": monotonic() - component_started,
+                    "output_type": type(result).__name__,
+                },
+            )
             return result
 
         if request.audio is not None:
@@ -1617,6 +1937,35 @@ class PhysicalAI:
         else:
             transcript = request.instruction
         _nonempty(transcript, "Transcript")
+        emit("speech.transcribed", details={"text": transcript})
+        if is_emergency_stop_command(transcript):
+            stop_issues = self.emergency_stop()
+            response_text = (
+                "Emergency stop requested. Motor control is stopped and remains latched."
+                if not stop_issues
+                else "Emergency stop requested, but one or more stop hooks reported an error."
+            )
+            response_audio = None
+            if request.speak:
+                response_audio = invoke(
+                    Layer.VOICE,
+                    "voice.synthesize",
+                    SpeechSynthesisInput(response_text, request.user_id),
+                    bytes,
+                )
+                if not response_audio:
+                    raise ValueError("Voice synthesizer returned empty emergency-stop audio")
+            emit(
+                "safety.emergency_stop",
+                details={"issues": stop_issues, "response": response_text},
+            )
+            return EmergencyStopResult(
+                transcript,
+                response_text,
+                response_audio,
+                stop_issues,
+                tuple(decisions),
+            )
         # The frozen MoIRA router compares this task text with descriptions of
         # every contract-compatible specialist. The edge allow-list remains the
         # authority over which components can ever be selected.
@@ -1628,6 +1977,16 @@ class PhysicalAI:
             PerceptionInput(request.frames, workspace),
             WorldState,
         )
+        emit(
+            "scene.perceived",
+            details={
+                "objects": tuple(
+                    {"id": item.id, "label": item.label, "confidence": item.confidence}
+                    for item in world.objects
+                ),
+                "hazards": world.hazards,
+            },
+        )
         personal = invoke(
             Layer.PERSONAL,
             "personal.recall",
@@ -1636,11 +1995,28 @@ class PhysicalAI:
         )
         if personal.user_id != request.user_id:
             raise ValueError("Personal-memory component returned context for the wrong user")
+        emit(
+            "memory.recalled",
+            details={
+                "preferences": dict(personal.preferences),
+                "accommodations": personal.accommodations,
+                "recent_comment_count": len(personal.recent_comments),
+            },
+        )
         intent = invoke(
             Layer.VOICE,
             "voice.ground",
             VoiceGroundingInput(transcript, world, personal, request.dialogue),
             GroundedIntent,
+        )
+        emit(
+            "intent.grounded",
+            details={
+                "action": intent.action,
+                "object_roles": dict(intent.object_roles),
+                "constraints": intent.constraints,
+                "needs_clarification": intent.needs_clarification,
+            },
         )
         known_objects = {item.id for item in world.objects}
         if any(object_id not in known_objects for object_id in intent.target_object_ids):
@@ -1669,6 +2045,13 @@ class PhysicalAI:
             )
             if recorded.user_id != request.user_id:
                 raise ValueError("Personal-memory component recorded the wrong user")
+            emit(
+                "clarification.required",
+                details={
+                    "question": intent.clarification_question,
+                    "transcript": transcript,
+                },
+            )
             return ClarificationResult(
                 transcript,
                 intent.clarification_question,
@@ -1678,23 +2061,24 @@ class PhysicalAI:
                 tuple(decisions),
             )
 
+        grasp_targets = intent.manipulated_object_ids
         grasps: tuple[GraspPlan, ...] = ()
-        if intent.target_object_ids:
+        if grasp_targets:
             grasp_result = invoke(
                 Layer.GRASP,
                 "grasp.pose_6d",
                 GraspPlanningInput(
                     world,
-                    intent.target_object_ids,
+                    grasp_targets,
                     self.gripper_geometry,
                     tuple(str(value) for value in workspace.get("excluded_grasp_regions", ())),
                 ),
                 tuple,
             )
             if (
-                len(grasp_result) != len(intent.target_object_ids)
+                len(grasp_result) != len(grasp_targets)
                 or any(not isinstance(item, GraspPlan) for item in grasp_result)
-                or {item.target_object_id for item in grasp_result} != set(intent.target_object_ids)
+                or {item.target_object_id for item in grasp_result} != set(grasp_targets)
             ):
                 raise ValueError("Grasp component did not cover every grounded target")
             grasps = grasp_result
@@ -1770,7 +2154,15 @@ class PhysicalAI:
         )
         if not candidates:
             raise RuntimeError("Planner returned no plan supported by the installed physical arms")
+        emit(
+            "plans.generated",
+            details={
+                "candidate_ids": tuple(candidate.id for candidate in candidates),
+                "candidate_count": len(candidates),
+            },
+        )
         grounded_targets = set(intent.target_object_ids)
+        manipulated_targets = set(intent.manipulated_object_ids)
         for candidate in candidates:
             candidate_targets = {
                 step.target_object_id
@@ -1779,8 +2171,20 @@ class PhysicalAI:
             }
             if not candidate_targets <= known_objects:
                 raise ValueError("Planner targeted an object absent from perception")
-            if not grounded_targets <= candidate_targets:
-                raise ValueError("Planner omitted a target grounded by voice NLP")
+            referenced_objects = set(candidate_targets)
+            for step in candidate.steps:
+                parameters = step.parameters or {}
+                referenced_objects.update(
+                    value
+                    for key, value in parameters.items()
+                    if key.endswith("_object_id") and isinstance(value, str)
+                )
+            if not manipulated_targets <= candidate_targets:
+                raise ValueError("Planner omitted a manipulated object grounded by voice NLP")
+            if not grounded_targets <= referenced_objects:
+                raise ValueError("Planner omitted an object role grounded by voice NLP")
+            if not referenced_objects <= known_objects:
+                raise ValueError("Planner referenced an object absent from perception")
 
         def fixture_policy_capability(candidate: CandidatePlan) -> str:
             """Dispatch the dependency-free offline fixture without an ML router."""
@@ -1834,11 +2238,27 @@ class PhysicalAI:
             routing_text = policy_routing_text(transcript, candidate)
             semantic_select = getattr(self.router, "select_compatible", None)
             if callable(semantic_select):
+                emit(
+                    "semantic_router.started",
+                    details={
+                        "candidate_id": candidate.id,
+                        "compatible_capabilities": MANIPULATION_POLICY_CAPABILITIES,
+                    },
+                )
+                router_started = monotonic()
                 decision = semantic_select(
                     Layer.MANIPULATION,
                     MANIPULATION_POLICY_CAPABILITIES,
                     routing_text,
                     {**route_context, "plan_id": candidate.id},
+                )
+                emit(
+                    "semantic_router.completed",
+                    decision,
+                    {
+                        "candidate_id": candidate.id,
+                        "latency_seconds": monotonic() - router_started,
+                    },
                 )
                 policy = invoke_decision(decision, policy_input, PolicyPlan)
             else:
@@ -1991,6 +2411,17 @@ class PhysicalAI:
                     "minimum_clearance_m": collision.minimum_clearance_m,
                 },
             )
+            emit(
+                "simulation.completed",
+                details={
+                    "candidate_id": candidate.id,
+                    "score": simulation.score,
+                    "safe": simulation.safe,
+                    "horizon_seconds": simulation.horizon_seconds,
+                    "risks": simulation.risks,
+                    "world_models": simulation.predicted["world_models"],
+                },
+            )
             return policy, trajectory, predictions, reward, safety, simulation
 
         workers = min(self.profile.simulation_workers, len(candidates))
@@ -2014,18 +2445,175 @@ class PhysicalAI:
             PlanSelectionInput(intent, world, personal, candidates, simulations),
             FinalPlan,
         )
+        emit(
+            "plan.selected",
+            details={
+                "candidate_id": plan.candidate.id,
+                "score": plan.simulation.score,
+                "safe": plan.simulation.safe,
+                "summary": plan.summary,
+            },
+        )
         candidate_by_id = {candidate.id: candidate for candidate in candidates}
         simulation_by_id = {outcome.plan_id: outcome for outcome in simulations}
         if (
-            candidate_by_id.get(plan.candidate.id) != plan.candidate
-            or simulation_by_id.get(plan.simulation.plan_id) != plan.simulation
+            _wire_equivalent(candidate_by_id.get(plan.candidate.id))
+            != _wire_equivalent(plan.candidate)
+            or _wire_equivalent(simulation_by_id.get(plan.simulation.plan_id))
+            != _wire_equivalent(plan.simulation)
         ):
             raise ValueError("Planner selected a plan that was not supplied and simulated")
+        if request.confirmed_intent is not None and (
+            _wire_equivalent(intent) != _wire_equivalent(request.confirmed_intent)
+            or _wire_equivalent(plan.candidate)
+            != _wire_equivalent(request.confirmed_candidate)
+        ):
+            emit(
+                "plan.confirmation_invalidated",
+                details={
+                    "reason": "fresh intent or selected plan changed",
+                },
+            )
+            raise ConfirmedPlanChangedError(
+                "Fresh intent or selected plan changed after confirmation"
+            )
         policy_by_id = {item.plan_id: item for item in policies}
         trajectory_by_id = {item.plan_id: item for item in trajectories}
         selected_trajectory = trajectory_by_id.get(plan.candidate.id)
         if selected_trajectory is None:
             raise RuntimeError("Selected plan has no validated motion trajectory")
+        world_pre_execute = None
+        execution_guard = None
+        if request.execute:
+            human_error_policy = workspace.get("human_error_policy")
+            if not isinstance(human_error_policy, Mapping):
+                raise RuntimeError(
+                    "Physical execution requires workspace.human_error_policy"
+                )
+            max_drift_m = human_error_policy.get("max_pre_execution_target_drift_m")
+            monitor_between_steps = human_error_policy.get("monitor_scene_between_steps")
+            if (
+                not isinstance(max_drift_m, (int, float))
+                or isinstance(max_drift_m, bool)
+                or not math.isfinite(max_drift_m)
+                or max_drift_m <= 0
+            ):
+                raise RuntimeError(
+                    "Physical execution requires a finite positive "
+                    "human_error_policy.max_pre_execution_target_drift_m"
+                )
+            if not isinstance(monitor_between_steps, bool):
+                raise RuntimeError(
+                    "Physical execution requires boolean "
+                    "human_error_policy.monitor_scene_between_steps"
+                )
+            if pre_action_capture is None:
+                raise RuntimeError("Physical execution requires pre-action scene capture")
+            revalidation_frames = pre_action_capture()
+            if (
+                not isinstance(revalidation_frames, tuple)
+                or not revalidation_frames
+                or any(not isinstance(frame, CameraFrame) for frame in revalidation_frames)
+            ):
+                raise TypeError(
+                    "pre_action_capture must return a non-empty tuple of CameraFrame objects"
+                )
+            world_pre_execute = invoke(
+                Layer.PERCEPTION,
+                "perception.scene",
+                PerceptionInput(revalidation_frames, workspace),
+                WorldState,
+                context={"observation_phase": "pre_execution_revalidation"},
+            )
+            try:
+                revalidation = validate_pre_execution_scene(
+                    world,
+                    world_pre_execute,
+                    intent.target_object_ids,
+                    max_drift_m,
+                )
+            except SceneChangedError as exc:
+                stop_issues = self.emergency_stop()
+                emit(
+                    "scene.changed",
+                    details={
+                        "reason": str(exc),
+                        "stop_issues": stop_issues,
+                    },
+                )
+                raise
+            emit(
+                "scene.revalidated",
+                details={
+                    "target_drift_m": dict(revalidation.target_drift_m),
+                    "maximum_allowed_drift_m": revalidation.maximum_allowed_drift_m,
+                },
+            )
+            if monitor_between_steps:
+                reference_world = world_pre_execute
+                destination_ids = intent.destination_object_ids
+                manipulated_ids = intent.manipulated_object_ids
+
+                def execution_guard(
+                    next_step: PlanStep,
+                    completed_actions: tuple[str, ...],
+                ) -> None:
+                    del next_step
+                    moving_actions = {
+                        "lift",
+                        "transfer",
+                        "move",
+                        "place",
+                        "release",
+                        "handover",
+                        "insert",
+                        "pour",
+                    }
+                    manipulated_still_stationary = not any(
+                        action.casefold() in moving_actions for action in completed_actions
+                    )
+                    guarded_ids = tuple(
+                        dict.fromkeys(
+                            [
+                                *destination_ids,
+                                *(manipulated_ids if manipulated_still_stationary else ()),
+                            ]
+                        )
+                    )
+                    live_frames = pre_action_capture()
+                    if (
+                        not isinstance(live_frames, tuple)
+                        or not live_frames
+                        or any(not isinstance(frame, CameraFrame) for frame in live_frames)
+                    ):
+                        raise TypeError(
+                            "execution scene guard capture must return CameraFrame objects"
+                        )
+                    live_world = invoke(
+                        Layer.PERCEPTION,
+                        "perception.scene",
+                        PerceptionInput(live_frames, workspace),
+                        WorldState,
+                        context={"observation_phase": "during_execution_guard"},
+                    )
+                    try:
+                        report = validate_pre_execution_scene(
+                            reference_world,
+                            live_world,
+                            guarded_ids,
+                            float(max_drift_m),
+                        )
+                    except SceneChangedError as exc:
+                        emit("scene.changed", details={"reason": str(exc)})
+                        raise
+                    emit(
+                        "scene.execution_revalidated",
+                        details={
+                            "completed_actions": completed_actions,
+                            "guarded_target_ids": guarded_ids,
+                            "target_drift_m": dict(report.target_drift_m),
+                        },
+                    )
         selected_arms = {
             arm for step in plan.candidate.steps for arm in step.arms
         }
@@ -2039,9 +2627,7 @@ class PhysicalAI:
         )
         if control_decision.runtime == "remote":
             raise RuntimeError("Remote components cannot hold motor authority")
-        with decisions_lock:
-            decisions.append(control_decision)
-        control = self.registry.invoke(
+        control = invoke_decision(
             control_decision,
             ControlInput(
                 plan,
@@ -2050,12 +2636,24 @@ class PhysicalAI:
                 policy_by_id[plan.candidate.id],
                 selected_trajectory,
                 stability,
+                execution_guard,
             ),
+            ControlReport,
+            local_authority=True,
         )
         if not isinstance(control, ControlReport) or control.plan_id != plan.candidate.id:
             raise TypeError("Bimanual controller returned an invalid report")
         if not request.execute and control.executed:
             raise RuntimeError("Controller executed motion during a plan-only request")
+        emit(
+            "control.finished",
+            details={
+                "executed": control.executed,
+                "success": control.success,
+                "telemetry_count": len(control.telemetry),
+                "issues": control.issues,
+            },
+        )
         world_after = None
         if control.executed and post_action_capture is not None:
             verification_frames = post_action_capture()
@@ -2086,6 +2684,14 @@ class PhysicalAI:
             raise ValueError("Outcome verifier contradicted an unexecuted control report")
         if control.executed and not control.success and outcome.status == "succeeded":
             raise ValueError("Outcome verifier contradicted failed control telemetry")
+        emit(
+            "outcome.verified",
+            details={
+                "status": outcome.status,
+                "confidence": outcome.confidence,
+                "camera_verified": world_after is not None,
+            },
+        )
         failure = invoke(
             Layer.FAILURE,
             "failure.classify",
@@ -2135,6 +2741,14 @@ class PhysicalAI:
         )
         if recorded.user_id != request.user_id:
             raise ValueError("Personal-memory component recorded the wrong user")
+        emit(
+            "feedback.saved",
+            details={
+                "learned_facts": feedback.learned_facts,
+                "adjustments": feedback.next_time_adjustments,
+                "prediction_error_samples": prediction_error.sample_count,
+            },
+        )
         status = "Completed" if outcome.status == "succeeded" else "Failed"
         if outcome.status == "uncertain":
             status = "Uncertain"
@@ -2151,6 +2765,15 @@ class PhysicalAI:
             )
             if not response_audio:
                 raise ValueError("Voice synthesizer returned empty audio")
+        emit(
+            "pipeline.completed",
+            details={
+                "selected_plan": plan.candidate.id,
+                "executed": control.executed,
+                "outcome": outcome.status,
+                "response_audio_bytes": len(response_audio or b""),
+            },
+        )
         return PhysicalAIResult(
             intent=intent,
             world=world,
@@ -2177,6 +2800,7 @@ class PhysicalAI:
             failure=failure,
             load=load,
             prediction_error=prediction_error,
+            world_pre_execute=world_pre_execute,
             world_after=world_after,
         )
 
@@ -2239,6 +2863,7 @@ class BimanualControlComponent:
         ):
             raise ValueError("Controller max_slip_probability must be in (0, 1]")
         self.max_slip_probability = float(max_slip_probability)
+        self._stop_latch = Event()
 
     @classmethod
     def from_robot_model(
@@ -2279,11 +2904,37 @@ class BimanualControlComponent:
             max_slip_probability=robot_model.max_slip_probability,
         )
 
+    def emergency_stop(self) -> tuple[str, ...]:
+        """Stop every installed arm and report hardware stop-hook failures."""
+
+        self._stop_latch.set()
+        issues: list[str] = []
+        for arm, driver in self.drivers.items():
+            try:
+                driver.stop()
+            except Exception as exc:
+                detail = str(exc).strip() or type(exc).__name__
+                issues.append(f"{arm}: {detail}")
+        return tuple(issues)
+
+    def stop(self) -> None:
+        issues = self.emergency_stop()
+        if issues:
+            raise RuntimeError("; ".join(issues))
+
     def run(self, request: ControlInput) -> ControlReport:
         if not isinstance(request, ControlInput):
             raise TypeError("Bimanual controller expects ControlInput")
         if not request.execute:
             return ControlReport(request.plan.candidate.id, False, True, ())
+        if self._stop_latch.is_set():
+            return ControlReport(
+                request.plan.candidate.id,
+                False,
+                False,
+                (),
+                ("Emergency stop latch is active; check the workspace and restart runtime",),
+            )
         if request.tactile is not None and not request.tactile.stable:
             return ControlReport(
                 request.plan.candidate.id,
@@ -2339,25 +2990,27 @@ class BimanualControlComponent:
 
         telemetry: list[ArmTelemetry] = []
         issues: list[str] = []
+        completed_actions: list[str] = []
 
         def stop_all() -> tuple[str, ...]:
-            stop_issues = []
-            for arm, driver in self.drivers.items():
-                try:
-                    driver.stop()
-                except Exception as exc:
-                    detail = str(exc).strip() or type(exc).__name__
-                    stop_issues.append(f"{arm} arm emergency stop failed: {detail}")
-            return tuple(stop_issues)
+            return tuple(
+                issue.replace(": ", " arm emergency stop failed: ", 1)
+                for issue in self.emergency_stop()
+            )
 
         try:
             for step in request.plan.candidate.steps:
+                if request.execution_guard is not None:
+                    request.execution_guard(step, tuple(completed_actions))
                 commands: tuple[ActionChunk | None, ...] = (
                     tuple(chunks_by_step[step.id])
                     if request.policy is not None
                     else (None,)
                 )
                 for chunk in commands:
+                    if self._stop_latch.is_set():
+                        issues.append(f"{step.id}: emergency stop latch activated")
+                        break
                     command_id = chunk.id if chunk is not None else step.id
                     duration = (
                         chunk.duration_seconds if chunk is not None else step.duration_seconds
@@ -2380,6 +3033,9 @@ class BimanualControlComponent:
                     pool.shutdown(wait=True)
                     results = tuple(future.result() for future in futures)
                     telemetry.extend(results)
+                    if self._stop_latch.is_set():
+                        issues.append(f"{command_id}: emergency stop latch activated")
+                        break
                     reported_issues = [result.issue for result in results if result.issue]
                     if reported_issues:
                         issues.extend(reported_issues)
@@ -2401,6 +3057,7 @@ class BimanualControlComponent:
                         break
                 if issues:
                     break
+                completed_actions.append(step.action)
         except Exception as exc:
             issues.extend(stop_all())
             issues.append(str(exc).strip() or type(exc).__name__)

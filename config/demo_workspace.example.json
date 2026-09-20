@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "delivery_zones": {
+    "left": null,
+    "right": null
+  },
+  "human_error_policy": {
+    "max_pre_execution_target_drift_m": null,
+    "monitor_scene_between_steps": true
+  },
+  "perception": {
+    "labels": ["red block", "blue tray", "person"],
+    "confidence_threshold": 0.32,
+    "text_threshold": 0.25,
+    "hazard_labels": ["person"],
+    "object_dimensions_m": {
+      "red block": null,
+      "blue tray": null,
+      "person": null
+    }
+  }
+}

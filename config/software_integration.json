@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "validated_for_physical_use": false,
+  "robot_model": "../robot_models/four_dof_desktop_arm/model.json",
+  "memory_path": "../outputs/software_integration_memory.db",
+  "journal_path": "../outputs/software_integration_runs.jsonl",
+  "scene_image": "../outputs/software_integration_scene.png",
+  "command_audio": "../outputs/software_integration_command.wav",
+  "profile": {
+    "component_ram_budget_mb": 256,
+    "simulation_workers": 2,
+    "simulation_horizon_seconds": 2.5,
+    "simulation_step_seconds": 0.1,
+    "max_candidate_plans": 3,
+    "cloud_timeout_seconds": 300.0
+  },
+  "integration_assumptions": {
+    "per_arm_payload_kg": 0.025,
+    "max_gripper_width_m": 0.05,
+    "required_clearance_m": 0.02,
+    "max_joint_velocity_rad_s": 5.5,
+    "max_gripper_velocity_m_s": 0.1,
+    "max_gripper_force_n": 20.0,
+    "max_slip_probability": 0.35,
+    "max_collision_probability": 0.2,
+    "min_grasp_stability_score": 0.6
+  },
+  "workspace": {
+    "coordinate_frame": "robot_base",
+    "up_axis": "y",
+    "table_height_m": 0.0,
+    "minimum_clearance_m": 0.1,
+    "people_present": false,
+    "human_error_policy": {
+      "max_pre_execution_target_drift_m": 0.02,
+      "monitor_scene_between_steps": true
+    },
+    "perception": {
+      "labels": ["red block", "blue tray"],
+      "confidence_threshold": 0.32,
+      "hazard_labels": [],
+      "object_dimensions_m": {
+        "red block": [0.04, 0.04, 0.04],
+        "blue tray": [0.12, 0.02, 0.08]
+      },
+      "object_masses_kg": {
+        "red block": 0.02,
+        "blue tray": 0.04
+      },
+      "camera_calibrations": {
+        "software-camera": {
+          "resolution_px": [640, 480],
+          "camera_matrix": [[500.0, 0.0, 320.0], [0.0, 500.0, 240.0], [0.0, 0.0, 1.0]],
+          "distortion_coefficients": [0.0, 0.0, 0.0, 0.0, 0.0],
+          "camera_to_base_matrix": [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.45], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]]
+        }
+      }
+    }
+  }
+}

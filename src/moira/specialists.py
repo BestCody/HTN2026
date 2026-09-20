@@ -131,9 +131,17 @@ class SpecializedManipulationPolicy:
             target = objects.get(step.target_object_id) if step.target_object_id else None
             grasp = grasps.get(step.target_object_id)
             parameters = step.parameters or {}
+            position_key = (
+                "destination_position_m"
+                if step.action.lower() in ("transfer", "release", "place", "handover")
+                else "target_position_m"
+            )
             raw_position = parameters.get(
-                "target_position_m",
-                target.position_m if target is not None else None,
+                position_key,
+                parameters.get(
+                    "target_position_m",
+                    target.position_m if target is not None else None,
+                ),
             )
             if raw_position is None:
                 raise ValueError(f"Offline policy fixture needs a target pose for {step.id}")
@@ -183,7 +191,7 @@ class SpecializedManipulationPolicy:
 
 
 class PlanarBimanualIK:
-    """Bounded analytic IK for a Pi-side two-link validation envelope."""
+    """Bounded analytic IK for calibrated yaw/pitch tabletop arm layouts."""
 
     def __init__(
         self,
@@ -195,19 +203,52 @@ class PlanarBimanualIK:
         include_wrist_joint: bool = True,
         joint_limits_rad: tuple[tuple[float, float], ...] | None = None,
         up_axis: str = "z",
+        kinematic_layout: str = "yaw_shoulder_elbow",
+        effective_reach_m: float | None = None,
+        fixed_link_reach_tolerance_m: float | None = None,
     ) -> None:
-        if min(upper_arm_m, forearm_m, shoulder_height_m, shoulder_offset_m) <= 0:
-            raise ValueError("IK geometry must be positive")
+        if shoulder_height_m <= 0:
+            raise ValueError("IK shoulder height must be positive")
+        if kinematic_layout not in (
+            "yaw_shoulder_elbow",
+            "yaw_shoulder_fixed_link",
+        ):
+            raise ValueError("IK kinematic layout is unsupported")
+        if kinematic_layout == "yaw_shoulder_elbow":
+            if min(upper_arm_m, forearm_m) <= 0:
+                raise ValueError("IK two-link lengths must be positive")
+        elif (
+            effective_reach_m is None
+            or fixed_link_reach_tolerance_m is None
+            or effective_reach_m <= 0
+            or not 0 < fixed_link_reach_tolerance_m <= effective_reach_m
+        ):
+            raise ValueError(
+                "Fixed-link IK needs a positive effective reach and bounded tolerance"
+            )
+        if not isinstance(shoulder_offset_m, (int, float)) or not math.isfinite(
+            shoulder_offset_m
+        ) or shoulder_offset_m < 0:
+            raise ValueError("IK shoulder offset must be finite and nonnegative")
         self.upper_arm_m = upper_arm_m
         self.forearm_m = forearm_m
         self.shoulder_height_m = shoulder_height_m
         self.shoulder_offset_m = shoulder_offset_m
         self.include_wrist_joint = include_wrist_joint
         self.joint_limits_rad = joint_limits_rad
+        self.kinematic_layout = kinematic_layout
+        self.effective_reach_m = effective_reach_m
+        self.fixed_link_reach_tolerance_m = fixed_link_reach_tolerance_m
         if up_axis not in ("y", "z"):
             raise ValueError("Planar IK supports only Y-up or Z-up robot frames")
         self.up_axis = up_axis
-        expected = 4 if include_wrist_joint else 3
+        if kinematic_layout == "yaw_shoulder_fixed_link" and include_wrist_joint:
+            raise ValueError("Fixed-link IK cannot include a wrist joint")
+        expected = (
+            2
+            if kinematic_layout == "yaw_shoulder_fixed_link"
+            else (4 if include_wrist_joint else 3)
+        )
         if joint_limits_rad is not None and (
             len(joint_limits_rad) != expected
             or any(lower >= upper for lower, upper in joint_limits_rad)
@@ -227,6 +268,9 @@ class PlanarBimanualIK:
                 (joint.lower_rad, joint.upper_rad) for joint in model.kinematic_joints
             ),
             up_axis=model.up_axis,
+            kinematic_layout=model.kinematic_layout,
+            effective_reach_m=model.effective_reach_m,
+            fixed_link_reach_tolerance_m=model.fixed_link_reach_tolerance_m,
         )
 
     def run(self, request: KinematicsInput) -> KinematicsSolution:
@@ -254,28 +298,41 @@ class PlanarBimanualIK:
                     vertical = z - self.shoulder_height_m
                 radial = math.hypot(x, lateral - shoulder_lateral)
                 distance = math.hypot(radial, vertical)
-                low = abs(self.upper_arm_m - self.forearm_m) + 1e-6
-                high = self.upper_arm_m + self.forearm_m - 1e-6
-                if not low <= distance <= high:
-                    reasons.append(f"{chunk.id}/{arm}: target is outside the IK workspace")
-                bounded = max(low, min(high, distance))
-                elbow_cos = (
-                    bounded * bounded
-                    - self.upper_arm_m * self.upper_arm_m
-                    - self.forearm_m * self.forearm_m
-                ) / (2 * self.upper_arm_m * self.forearm_m)
-                elbow = math.acos(_clamp(elbow_cos, -1.0, 1.0))
-                shoulder = math.atan2(vertical, radial) - math.atan2(
-                    self.forearm_m * math.sin(elbow),
-                    self.upper_arm_m + self.forearm_m * math.cos(elbow),
-                )
                 base = math.atan2(lateral - shoulder_lateral, x)
-                wrist = -shoulder - elbow
-                joint_target = (
-                    (base, shoulder, elbow, wrist)
-                    if self.include_wrist_joint
-                    else (base, shoulder, elbow)
-                )
+                if self.kinematic_layout == "yaw_shoulder_fixed_link":
+                    if (
+                        abs(distance - self.effective_reach_m)
+                        > self.fixed_link_reach_tolerance_m
+                    ):
+                        reasons.append(
+                            f"{chunk.id}/{arm}: target is outside the fixed-link arc"
+                        )
+                    shoulder = math.atan2(vertical, radial)
+                    joint_target = (base, shoulder)
+                else:
+                    low = abs(self.upper_arm_m - self.forearm_m) + 1e-6
+                    high = self.upper_arm_m + self.forearm_m - 1e-6
+                    if not low <= distance <= high:
+                        reasons.append(
+                            f"{chunk.id}/{arm}: target is outside the IK workspace"
+                        )
+                    bounded = max(low, min(high, distance))
+                    elbow_cos = (
+                        bounded * bounded
+                        - self.upper_arm_m * self.upper_arm_m
+                        - self.forearm_m * self.forearm_m
+                    ) / (2 * self.upper_arm_m * self.forearm_m)
+                    elbow = math.acos(_clamp(elbow_cos, -1.0, 1.0))
+                    shoulder = math.atan2(vertical, radial) - math.atan2(
+                        self.forearm_m * math.sin(elbow),
+                        self.upper_arm_m + self.forearm_m * math.cos(elbow),
+                    )
+                    wrist = -shoulder - elbow
+                    joint_target = (
+                        (base, shoulder, elbow, wrist)
+                        if self.include_wrist_joint
+                        else (base, shoulder, elbow)
+                    )
                 if self.joint_limits_rad is not None:
                     for index, (value, limits) in enumerate(
                         zip(joint_target, self.joint_limits_rad, strict=True), start=1

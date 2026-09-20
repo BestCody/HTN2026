@@ -44,11 +44,11 @@ bimanual adaptation and validation wait for the second physical arm.
    as measured state would violate the current execution contract.
 3. There is no teleoperation interface, demonstration recorder, synchronized
    episode format, dataset versioning, or train/validation/test split tooling.
-4. Camera capture is a single JPEG through CSI-oriented `rpicam-still`. The
-   confirmed sensor is a monocular CO6! USB webcam, but there is no UVC/V4L2
-   stream source, stable device discovery, synchronized frame pipeline, camera
-   intrinsic/extrinsic calibration loader, tabletop mapping, or markerless
-   robot-pose tracker.
+4. The confirmed sensor is a monocular CO6! USB webcam attached to the RTX
+   laptop. OpenCV capture and camera-calibration loading exist, but the machine
+   must still enumerate the CO6 with a stable device identity and the physical
+   intrinsic/extrinsic record, tabletop mapping, and markerless robot-pose
+   tracker remain incomplete.
 5. The production Baseten model services do not exist in this repository. A
    general frozen-MiniLM router Chain is implemented, but it has not yet been
    deployed. Model endpoint identifiers and the factory wiring shown in
@@ -102,7 +102,7 @@ robot-task accuracy; catalog changes require a new held-out evaluation.
 
 | Layer/component | Current repository reality | Training disposition |
 | --- | --- | --- |
-| Baseten component router | Frozen MiniLM semantic selection inside the Pi-supplied compatible allow-list | No training. Maintain expert descriptions and interface metadata; evaluate every catalog change on held-out task paraphrases. |
+| Baseten component router | Frozen MiniLM semantic selection inside the laptop-supplied compatible allow-list | No training. Maintain expert descriptions and interface metadata; evaluate every catalog change on held-out task paraphrases. |
 | Scene perception | Remote placeholder; offline component accepts object dictionaries rather than pixels | Deploy a pretrained detector/segmenter and derive tabletop pose from calibrated monocular geometry. Fine-tune only if target objects or the workspace fail evaluation. |
 | 6D grasp pose | Remote placeholder; offline top/side geometric fixture | Start from a pretrained grasp model, then constrain/evaluate it for this gripper and 3-DOF reachable workspace. Robot-specific fine-tuning is optional until pretrained grasps fail. |
 | Personal memory | Real local SQLite profile/event store | No training. Define retention and retrieval tests. |
@@ -209,16 +209,17 @@ splitting adjacent video frames, which would leak nearly identical observations.
 
 The following code must be added before production training can start:
 
-1. UVC/V4L2 CO6! capture plus a Raspberry Pi episode recorder with monotonic
-   timestamps and atomic episode completion.
+1. Connect the implemented UVC/OpenCV CO6! source to the new episode recorder;
+   the recorder now enforces monotonic timestamps, hashed frames, lineage, and
+   atomic episode completion.
 2. Safe teleoperation UI or controller that emits the same bounded action
    representation used by deployed policies.
 3. A `perception.robot_state` component contract, markerless keypoint inference,
    and a `RobotState` representation that records source, confidence/uncertainty,
    and age instead of labeling every supplied value as measured.
-4. Camera/table calibration storage plus a dataset schema, integrity validator,
-   calibration/version manifest, and
-   train/validation/test split tool.
+4. Complete the generated camera/table calibration record. Storage, strict
+   validation, dataset lineage, atomic episode publication, and
+   train/validation/test episode labels are now implemented.
 5. Markerless keypoint dataset renderer/labeler, trainer, evaluation metrics,
    checkpoint metadata, and serving package.
 6. Compact structured-state policy backbone wrapper, loss, data loader,
@@ -231,8 +232,8 @@ The following code must be added before production training can start:
    endpoint ID and constructs all local factories.
 10. Offline replay, shadow planning, low-speed hardware evaluation, and regression
    gates for every checkpoint.
-11. Dataset and checkpoint lineage so feedback samples cannot silently train a
-    model against stale robot geometry or calibration.
+11. Extend the implemented robot/servo/camera dataset hashes to checkpoint
+    manifests so a checkpoint cannot silently use stale geometry or calibration.
 
 ## Recommended execution order
 

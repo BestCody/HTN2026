@@ -1,12 +1,18 @@
 import ast
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
 
 import pytest
 
-from moira.cloud import BasetenComponent, BasetenEndpoint, RemoteComponentRouter
+from moira.cloud import (
+    BasetenComponent,
+    BasetenEndpoint,
+    RemoteComponentRouter,
+    load_runtime_environment,
+)
 from moira.components import ComponentDecision, ComponentRegistry, ComponentSpec, Layer
 from moira.contracts import decode_physical_response
 from moira.physical import PersonalContext, VoiceGroundingInput, WorldState
@@ -204,6 +210,17 @@ def test_baseten_endpoint_uses_production_environment_and_api_key():
     assert headers == {"Authorization": "Api-Key key"}
 
 
+def test_baseten_endpoint_uses_special_development_deployment_url():
+    http = FakeHttp({"result": "ok"})
+    endpoint = BasetenEndpoint(
+        "model_123", environment="development", api_key="key", http=http
+    )
+
+    endpoint.predict({"input": "task"})
+
+    assert http.calls[0][0] == "https://model-model_123.api.baseten.co/development/predict"
+
+
 def test_baseten_endpoint_loads_ignored_local_env(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("BASETEN_API_KEY", raising=False)
@@ -235,6 +252,7 @@ def test_baseten_component_decodes_scene_grounded_voice_nlp_contract():
                 "transcript": "bring the mug",
                 "action": "bring",
                 "target_object_ids": ["mug-1"],
+                "object_roles": {"mug-1": "manipulated"},
                 "constraints": ["left arm is broken"],
             }
         }
@@ -266,6 +284,25 @@ def test_baseten_chain_router_uses_api_key_and_never_substitutes_locally():
         router.decide(Layer.VOICE, "voice.ground")
     assert http.calls[0][0].endswith("/environments/production/run_remote")
     assert http.calls[0][2] == {"Authorization": "Api-Key key"}
+
+
+def test_baseten_chain_router_uses_special_development_deployment_url():
+    registry = ComponentRegistry(ram_budget_mb=10)
+    registry.register(spec("voice-nlp"), Echo)
+    http = FakeHttp({"component_id": "voice-nlp"})
+    router = RemoteComponentRouter.from_baseten_chain(
+        registry,
+        "router_123",
+        environment="development",
+        api_key="key",
+        http=http,
+    )
+
+    router.decide(Layer.VOICE, "voice.ground")
+
+    assert http.calls[0][0] == (
+        "https://chain-router_123.api.baseten.co/development/run_remote"
+    )
 
 
 def test_pi_manifest_is_complete_and_profile_is_bounded():
@@ -314,3 +351,11 @@ def test_baseten_router_uses_general_metadata_instead_of_a_capability_route_tabl
     }
     assert "ROUTES" not in assigned_names
     assert "MODEL_ID" in assigned_names
+def test_runtime_environment_honors_explicit_file(monkeypatch, tmp_path):
+    env_file = tmp_path / "pi.env"
+    env_file.write_text("MOIRA_TEST_RUNTIME_VALUE=from-pi-env\n", encoding="utf-8")
+    monkeypatch.setenv("MOIRA_ENV_FILE", str(env_file))
+    monkeypatch.delenv("MOIRA_TEST_RUNTIME_VALUE", raising=False)
+
+    assert load_runtime_environment() == env_file
+    assert os.environ["MOIRA_TEST_RUNTIME_VALUE"] == "from-pi-env"

@@ -226,6 +226,9 @@ class RobotModel:
     components: tuple[str, ...]
     payload_limit_kg: float | None
     joints: tuple[RobotJoint, ...]
+    kinematic_layout: str
+    effective_reach_m: float | None
+    fixed_link_reach_tolerance_m: float | None
     upper_arm_m: float | None
     forearm_m: float | None
     shoulder_height_m: float | None
@@ -286,6 +289,11 @@ class RobotModel:
             raise ValueError("Robot configuration requires at least one kinematic joint")
         if len([joint for joint in self.joints if joint.role == "gripper"]) != 1:
             raise ValueError("Robot configuration requires one gripper joint")
+        if self.kinematic_layout not in (
+            "yaw_shoulder_elbow",
+            "yaw_shoulder_fixed_link",
+        ):
+            raise ValueError("Robot kinematic_layout is unsupported")
         if not isinstance(self.servo_controller, PCA9685Config):
             raise TypeError("Robot configuration requires a PCA9685 servo controller")
         joint_names = {joint.name for joint in self.joints}
@@ -306,6 +314,8 @@ class RobotModel:
             ):
                 raise ValueError("Servo pulse endpoints must be below the PCA9685 PWM period")
         for value, name in (
+            (self.effective_reach_m, "effective_reach_m"),
+            (self.fixed_link_reach_tolerance_m, "fixed_link_reach_tolerance_m"),
             (self.upper_arm_m, "upper_arm_m"),
             (self.forearm_m, "forearm_m"),
             (self.shoulder_height_m, "shoulder_height_m"),
@@ -319,6 +329,12 @@ class RobotModel:
         ):
             if value is not None and _finite(value, name) <= 0:
                 raise ValueError(f"{name} must be positive when present")
+        if (
+            self.effective_reach_m is not None
+            and self.fixed_link_reach_tolerance_m is not None
+            and self.fixed_link_reach_tolerance_m > self.effective_reach_m
+        ):
+            raise ValueError("fixed_link_reach_tolerance_m cannot exceed effective_reach_m")
         if self.max_gripper_width_m is not None and self.max_gripper_width_m > 0.5:
             raise ValueError("max_gripper_width_m cannot exceed 0.5 metres")
         for value, name in (
@@ -366,10 +382,8 @@ class RobotModel:
             and self.payload_validated
             and self.payload_limit_kg is not None
             and self.up_axis is not None
-            and len(self.kinematic_joints) == 3
+            and self.kinematic_layout_ready
             and not self.blockers
-            and self.upper_arm_m is not None
-            and self.forearm_m is not None
             and self.shoulder_height_m is not None
             and self.trajectory_frequency_hz is not None
             and self.required_clearance_m is not None
@@ -392,6 +406,20 @@ class RobotModel:
             )
             and all(joint.origin_m is not None for joint in self.joints)
             and all(joint.max_velocity_rad_s is not None for joint in self.joints)
+        )
+
+    @property
+    def kinematic_layout_ready(self) -> bool:
+        if self.kinematic_layout == "yaw_shoulder_elbow":
+            return (
+                len(self.kinematic_joints) == 3
+                and self.upper_arm_m is not None
+                and self.forearm_m is not None
+            )
+        return (
+            len(self.kinematic_joints) == 2
+            and self.effective_reach_m is not None
+            and self.fixed_link_reach_tolerance_m is not None
         )
 
     def require_motion_ready(self) -> None:
@@ -434,8 +462,11 @@ class RobotModel:
             missing.append("coordinate-frame up axis")
         if self.payload_limit_kg is None:
             missing.append("validated payload limit")
-        if len(self.kinematic_joints) != 3:
-            missing.append("three-joint planar motion layout")
+        expected_joints = 3 if self.kinematic_layout == "yaw_shoulder_elbow" else 2
+        if len(self.kinematic_joints) != expected_joints:
+            missing.append(
+                f"{expected_joints}-joint {self.kinematic_layout} motion layout"
+            )
         if not self.calibration_complete:
             missing.append("physical calibration")
         for validated, label in (
@@ -448,10 +479,26 @@ class RobotModel:
                 missing.append(label)
         if self.blockers:
             missing.extend(self.blockers)
+        geometry_requirements = [("shoulder height", self.shoulder_height_m)]
+        if self.kinematic_layout == "yaw_shoulder_elbow":
+            geometry_requirements.extend(
+                (
+                    ("upper-arm length", self.upper_arm_m),
+                    ("forearm length", self.forearm_m),
+                )
+            )
+        else:
+            geometry_requirements.extend(
+                (
+                    ("fixed-link effective reach", self.effective_reach_m),
+                    (
+                        "fixed-link reach tolerance",
+                        self.fixed_link_reach_tolerance_m,
+                    ),
+                )
+            )
         for name, value in (
-            ("upper-arm length", self.upper_arm_m),
-            ("forearm length", self.forearm_m),
-            ("shoulder height", self.shoulder_height_m),
+            *geometry_requirements,
             ("trajectory control frequency", self.trajectory_frequency_hz),
             ("required collision clearance", self.required_clearance_m),
             ("calibrated maximum gripper width", self.max_gripper_width_m),
@@ -531,6 +578,9 @@ class RobotModel:
         bimanual_mount = value.get("bimanual_mount", {})
         if not isinstance(bimanual_mount, Mapping):
             raise TypeError("Robot bimanual_mount must be a mapping")
+        kinematics = value.get("kinematics", {"layout": "yaw_shoulder_elbow"})
+        if not isinstance(kinematics, Mapping):
+            raise TypeError("Robot kinematics must be a mapping")
         control_limits = value.get("control_limits", {})
         if not isinstance(control_limits, Mapping):
             raise TypeError("Robot control_limits must be a mapping")
@@ -645,6 +695,9 @@ class RobotModel:
             if value.get("payload_limit_kg") is None
             else _finite(value.get("payload_limit_kg"), "payload_limit_kg"),
             tuple(joints),
+            str(kinematics.get("layout", "yaw_shoulder_elbow")),
+            kinematics.get("effective_reach_m"),
+            kinematics.get("fixed_link_reach_tolerance_m"),
             geometry.get("upper_arm_m"),
             geometry.get("forearm_m"),
             geometry.get("shoulder_height_m"),

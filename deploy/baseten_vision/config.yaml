@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/basetenlabs/truss/main/truss/config.schema.json
+description: Open-vocabulary, calibrated scene perception for the MoIRA robot.
+model_name: MoIRA Calibrated Grounding DINO Vision
+python_version: py311
+model_metadata:
+  model_id: /models/grounding-dino-tiny
+  pretty_name: MoIRA Calibrated Grounding DINO Vision
+  tags:
+    - zero-shot-object-detection
+    - physical-ai
+weights:
+  - source: hf://IDEA-Research/grounding-dino-tiny@a2bb814dd30d776dcf7e30523b00659f4f141c71
+    mount_location: /models/grounding-dino-tiny
+requirements:
+  - torch==2.7.1
+  - torchvision==0.22.1
+  - transformers==4.57.6
+  - Pillow==12.3.0
+  - timm==1.0.22
+  - numpy==2.2.6
+  - opencv-python-headless==4.12.0.88
+resources:
+  instance_type: L4:4x16

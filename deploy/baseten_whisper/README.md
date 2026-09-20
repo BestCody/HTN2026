@@ -13,6 +13,11 @@ segments. English transcription, VAD, deterministic decoding, and the
 Large V3 Turbo checkpoint are fixed deployment properties for the hackathon
 demo.
 
+The package pins CTranslate2 and the CUDA 12 cuBLAS/cuDNN runtime libraries.
+Their library directories are present in `LD_LIBRARY_PATH` when the model
+server starts; omitting them causes a live L4 replica to fail at inference with
+`libcublas.so.12` missing.
+
 ## Deploy from the repository root
 
 ```powershell

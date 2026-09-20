@@ -379,6 +379,34 @@ class ComponentRegistry:
                 ids = ", ".join(component_id for component_id, _ in failures)
                 raise RuntimeError(f"Failed to unload components: {ids}") from failures[0][1]
 
+    def emergency_stop(self) -> tuple[str, ...]:
+        """Signal every loaded stoppable component without waiting for its lease.
+
+        This method intentionally snapshots component instances under the registry
+        lock and calls stop hooks after releasing it. A concurrent hardware lease
+        must remain interruptible while an arm command is in progress.
+        """
+
+        with self._lock:
+            loaded = tuple(
+                (component_id, entry.instance)
+                for component_id, entry in self._entries.items()
+                if entry.instance is not None
+            )
+        issues: list[str] = []
+        for component_id, instance in loaded:
+            stop = getattr(instance, "emergency_stop", None)
+            if not callable(stop):
+                stop = getattr(instance, "stop", None)
+            if not callable(stop):
+                continue
+            try:
+                stop()
+            except Exception as exc:
+                detail = str(exc).strip() or type(exc).__name__
+                issues.append(f"{component_id}: {detail}")
+        return tuple(issues)
+
     def _loaded_ram(self) -> int:
         return sum(
             entry.spec.estimated_ram_mb

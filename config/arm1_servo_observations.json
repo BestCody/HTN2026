@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "robot_model_id": "three-actuator-desktop-arm-v2",
+  "robot_source_sha256": "bc5ad54ea950fa068b1c95d26e907497d43277aab97aa67eb58ef610bfd86df5",
+  "arm": "left",
+  "physical_id": "arm_1",
+  "reported_at": "2026-09-20",
+  "command_units": "servo-library degrees; PWM pulse mapping not yet identified",
+  "pca9685_channels": {
+    "J1_BASE_YAW": 0,
+    "J2_SHOULDER": 1,
+    "J3_GRIPPER": 3,
+    "unused": [
+      2
+    ]
+  },
+  "reference_marks": {
+    "base_front": "black tape"
+  },
+  "observations": {
+    "J1_BASE_YAW": {
+      "front_command_deg": 7,
+      "back_facing_command_deg": 137
+    },
+    "J2_SHOULDER": {
+      "highest_command_deg_approx": 0,
+      "pose_observations": [
+        {
+          "command_deg": 0,
+          "pose": "slightly leaning forward; servo cannot hold farther back"
+        },
+        {
+          "command_deg": 20,
+          "pose": "arm approximately 45 degrees to the ground"
+        },
+        {
+          "command_deg": 45,
+          "pose": "arm almost parallel with the ground"
+        }
+      ],
+      "hazards": [
+        "linkage must be tightened before final calibration",
+        "increasing beyond zero can drop the arm rapidly"
+      ]
+    },
+    "J3_GRIPPER": {
+      "maximum_open_command_deg": 180,
+      "first_closed_command_deg": 110,
+      "pressure_behavior": "commands below 110 increase gripping pressure",
+      "minimum_safe_pressure_command_deg": null
+    }
+  },
+  "not_validated": [
+    "servo library and its angle-to-pulse mapping",
+    "PWM pulse widths at every endpoint",
+    "physical joint angles at base endpoints",
+    "shoulder safe lower limit and maximum velocity",
+    "gripper aperture in metres and safe pressure floor",
+    "repeatability under load"
+  ]
+}

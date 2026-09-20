@@ -140,6 +140,84 @@ def test_controller_runs_installed_primary_arm_and_blocks_unavailable_arm():
     assert blocked.issues == ("Plan requires unavailable arm control slots: right",)
 
 
+def test_controller_emergency_stop_remains_latched_before_execution():
+    class Driver:
+        def __init__(self):
+            self.calls = 0
+            self.stopped = False
+
+        def execute(self, step, world):
+            self.calls += 1
+            return ArmTelemetry("left", step.id, True)
+
+        def stop(self):
+            self.stopped = True
+
+    driver = Driver()
+    component = BimanualControlComponent(driver)
+    assert component.emergency_stop() == ()
+    candidate = CandidatePlan(
+        "left-plan",
+        (PlanStep("left-step", "lift", ("left",), 0.1, "box"),),
+        "single arm",
+    )
+    plan = FinalPlan(
+        candidate,
+        SimulationOutcome("left-plan", 0.9, True, 2.5),
+        "single arm",
+    )
+    world = WorldState((DetectedObject("box", "box", 1, (0, 0, 0), 0.01),), {})
+
+    blocked = component.run(ControlInput(plan, world, True))
+
+    assert driver.stopped
+    assert driver.calls == 0
+    assert not blocked.executed
+    assert "stop latch" in blocked.issues[0].casefold()
+
+
+def test_controller_scene_guard_stops_before_the_next_step():
+    class Driver:
+        def __init__(self):
+            self.calls = []
+            self.stopped = False
+
+        def execute(self, step, world):
+            self.calls.append(step.id)
+            return ArmTelemetry("left", step.id, True)
+
+        def stop(self):
+            self.stopped = True
+
+    driver = Driver()
+    component = BimanualControlComponent(driver)
+    candidate = CandidatePlan(
+        "guarded",
+        (
+            PlanStep("approach", "approach", ("left",), 0.1, "box"),
+            PlanStep("grasp", "grasp", ("left",), 0.1, "box"),
+        ),
+        "guarded motion",
+    )
+    plan = FinalPlan(
+        candidate,
+        SimulationOutcome("guarded", 0.9, True, 2.5),
+        "guarded motion",
+    )
+    world = WorldState((DetectedObject("box", "box", 1, (0, 0, 0), 0.01),), {})
+
+    def guard(step, completed_actions):
+        if completed_actions:
+            raise RuntimeError("object moved during approach")
+
+    report = component.run(ControlInput(plan, world, True, execution_guard=guard))
+
+    assert driver.calls == ["approach"]
+    assert driver.stopped
+    assert report.executed and not report.success
+    assert "object moved" in report.issues[-1]
+
+
 def test_execution_request_requires_timestamped_measured_robot_state():
     frame = CameraFrame("camera", b"jpeg", time())
     with pytest.raises(ValueError, match="requires a robot_state"):
@@ -151,6 +229,7 @@ def test_execution_request_requires_timestamped_measured_robot_state():
             instruction="move",
             robot_state=RobotState({"left": (0.0,)}, observed_at=0.0),
             execute=True,
+            execution_confirmed=True,
         )
 
 

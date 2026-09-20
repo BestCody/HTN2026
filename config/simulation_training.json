@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "robot_model_id": "four-dof-desktop-arm-v1",
+  "robot_source_sha256": "bc5ad54ea950fa068b1c95d26e907497d43277aab97aa67eb58ef610bfd86df5",
+  "mujoco_model_sha256": "de5cf4555d9812870a9a7b7509bb39f4eb488b900db3f8fe6b9367ceaf3a8096",
+  "timestep_s": null,
+  "rollout_horizon_s": null,
+  "parallel_candidates": null,
+  "link_dynamics": {
+    "fixed_base": {
+      "mass_kg": null,
+      "center_of_mass_m": null,
+      "diaginertia_kg_m2": null,
+      "friction": null
+    },
+    "turntable": {
+      "mass_kg": null,
+      "center_of_mass_m": null,
+      "diaginertia_kg_m2": null,
+      "friction": null
+    },
+    "upper_arm": {
+      "mass_kg": null,
+      "center_of_mass_m": null,
+      "diaginertia_kg_m2": null,
+      "friction": null
+    },
+    "forearm": {
+      "mass_kg": null,
+      "center_of_mass_m": null,
+      "diaginertia_kg_m2": null,
+      "friction": null
+    },
+    "gripper_fixed": {
+      "mass_kg": null,
+      "center_of_mass_m": null,
+      "diaginertia_kg_m2": null,
+      "friction": null
+    },
+    "gripper_mirror": {
+      "mass_kg": null,
+      "center_of_mass_m": null,
+      "diaginertia_kg_m2": null,
+      "friction": null
+    },
+    "gripper_primary": {
+      "mass_kg": null,
+      "center_of_mass_m": null,
+      "diaginertia_kg_m2": null,
+      "friction": null
+    }
+  },
+  "joint_dynamics": {
+    "J1_BASE_YAW": {
+      "damping_nms_rad": null,
+      "armature_kg_m2": null,
+      "backlash_deg": null,
+      "max_torque_nm": null,
+      "time_constant_s": null
+    },
+    "J2_SHOULDER": {
+      "damping_nms_rad": null,
+      "armature_kg_m2": null,
+      "backlash_deg": null,
+      "max_torque_nm": null,
+      "time_constant_s": null
+    },
+    "J3_ELBOW": {
+      "damping_nms_rad": null,
+      "armature_kg_m2": null,
+      "backlash_deg": null,
+      "max_torque_nm": null,
+      "time_constant_s": null
+    },
+    "J4_END_EFFECTOR": {
+      "damping_nms_rad": null,
+      "armature_kg_m2": null,
+      "backlash_deg": null,
+      "max_torque_nm": null,
+      "time_constant_s": null
+    },
+    "J4_END_EFFECTOR_MIRROR": {
+      "damping_nms_rad": null,
+      "armature_kg_m2": null,
+      "backlash_deg": null,
+      "max_torque_nm": null,
+      "time_constant_s": null
+    }
+  },
+  "domain_randomization": {
+    "mass_fraction": null,
+    "friction_fraction": null,
+    "actuator_delay_s": null,
+    "camera_translation_m": null,
+    "camera_rotation_deg": null
+  }
+}

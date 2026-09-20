@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import math
 import sqlite3
 import subprocess
+import urllib.error
+import urllib.request
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -254,10 +257,20 @@ class SceneGroundedVoiceNLP:
         needs_clarification = needs_object and not targets
         question = "Which object do you mean?" if needs_clarification else None
         constraints = tuple(request.personal.accommodations)
+        transfer_actions = {"bring", "place", "move"}
+        object_roles = {
+            object_id: (
+                "manipulated"
+                if index == 0 or action not in transfer_actions
+                else "destination"
+            )
+            for index, object_id in enumerate(targets)
+        }
         return GroundedIntent(
             transcript,
             action,
             targets,
+            object_roles,
             constraints,
             needs_clarification,
             question,
@@ -293,9 +306,14 @@ class LayeredRulePlanner:
                 raise ValueError("No perceived objects are available to plan against")
             targets = {item.id: item for item in request.world.objects}
             target = (
-                targets[request.intent.target_object_ids[0]]
-                if request.intent.target_object_ids
+                targets[request.intent.manipulated_object_ids[0]]
+                if request.intent.manipulated_object_ids
                 else request.world.objects[0]
+            )
+            destination_parameter = (
+                {"destination_object_id": request.intent.destination_object_ids[0]}
+                if request.intent.destination_object_ids
+                else {}
             )
             accessible_side = "accessible right side"
             preferences = request.personal.preferences
@@ -321,6 +339,7 @@ class LayeredRulePlanner:
                                 {
                                     "delivery": accessible_side,
                                     "target_position_m": target.position_m,
+                                    **destination_parameter,
                                 },
                             ),
                             PlanStep(
@@ -332,6 +351,7 @@ class LayeredRulePlanner:
                                 {
                                     "delivery": accessible_side,
                                     "target_position_m": target.position_m,
+                                    **destination_parameter,
                                 },
                             ),
                         ),
@@ -563,7 +583,75 @@ class OpenCVCameraSource:
         with self._lock:
             if self._capture is not None:
                 self._capture.release()
-                self._capture = None
+            self._capture = None
+
+
+class LanCameraSource:
+    """Capture JPEG frames from the authenticated laptop camera service."""
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        token: str,
+        camera_id: str = "co6-usb",
+        timeout_seconds: float = 5.0,
+        max_response_bytes: int = 4 * 1024 * 1024,
+    ) -> None:
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            raise ValueError("LAN camera URL must use http:// or https://")
+        if not isinstance(token, str) or not token.strip():
+            raise ValueError("LAN camera requires a non-empty bearer token")
+        if not isinstance(camera_id, str) or not camera_id.strip():
+            raise ValueError("camera_id must be a non-empty string")
+        if (
+            not isinstance(timeout_seconds, (int, float))
+            or isinstance(timeout_seconds, bool)
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("LAN camera timeout must be finite and positive")
+        if (
+            not isinstance(max_response_bytes, int)
+            or isinstance(max_response_bytes, bool)
+            or max_response_bytes < 1024
+        ):
+            raise ValueError("LAN camera response limit must be at least 1024 bytes")
+        self.url = url
+        self.token = token
+        self.camera_id = camera_id
+        self.timeout_seconds = float(timeout_seconds)
+        self.max_response_bytes = max_response_bytes
+
+    def capture(self) -> CameraFrame:
+        request = urllib.request.Request(
+            self.url,
+            headers={"Authorization": f"Bearer {self.token}", "Accept": "application/json"},
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                raw = response.read(self.max_response_bytes + 1)
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"Laptop camera service returned HTTP {exc.code}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Cannot reach laptop camera service: {exc.reason}") from exc
+        if len(raw) > self.max_response_bytes:
+            raise RuntimeError("Laptop camera response exceeded its configured byte limit")
+        try:
+            payload = json.loads(raw)
+            encoded = payload["data_base64"]
+            media_type = payload["media_type"]
+            captured_at = payload["captured_at"]
+            response_camera_id = payload["camera_id"]
+            data = base64.b64decode(encoded, validate=True)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError("Laptop camera returned an invalid frame contract") from exc
+        if response_camera_id != self.camera_id:
+            raise RuntimeError("Laptop camera identity does not match the configured camera")
+        if media_type != "image/jpeg" or not data.startswith(b"\xff\xd8\xff"):
+            raise RuntimeError("Laptop camera did not return a valid JPEG frame")
+        return CameraFrame(self.camera_id, data, captured_at, media_type)
 
 
 class AlsaCommandRecorder:

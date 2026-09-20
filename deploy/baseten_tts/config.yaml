@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/basetenlabs/truss/main/truss/config.schema.json
+description: Low-latency spoken responses for the MoIRA physical-AI runtime.
+model_name: MoIRA Kokoro TTS
+python_version: py311
+model_metadata:
+  model_id: /models/kokoro-82m
+  default_voice: af_heart
+  pretty_name: MoIRA Kokoro TTS
+  tags:
+    - text-to-speech
+    - physical-ai
+weights:
+  - source: hf://hexgrad/Kokoro-82M@f3ff3571791e39611d31c381e3a41a3af07b4987
+    mount_location: /models/kokoro-82m
+requirements:
+  - torch==2.7.1
+  - kokoro==0.9.4
+  - numpy==2.2.6
+system_packages:
+  - espeak-ng
+resources:
+  instance_type: L4:4x16

@@ -1,9 +1,20 @@
 """MoIRA: external text routing over independent specialist policies."""
 
-from .cloud import BasetenComponent, BasetenEndpoint, RemoteComponentRouter
+from .cloud import (
+    BasetenComponent,
+    BasetenEndpoint,
+    RemoteComponentRouter,
+    load_runtime_environment,
+)
 from .components import ComponentDecision, ComponentRegistry, ComponentSpec, Layer
-from .edge_components import AlsaCommandRecorder, OpenCVCameraSource
+from .edge_components import AlsaCommandRecorder, LanCameraSource, OpenCVCameraSource
 from .experts import Expert, ExpertRegistry
+from .human_interaction import (
+    HumanAwarePhysicalSession,
+    HumanInteractionPolicy,
+    PlanProposal,
+    SpokenEmergencyStopMonitor,
+)
 from .pca9685 import (
     AdafruitPCA9685Device,
     PCA9685ArmDriver,
@@ -18,10 +29,12 @@ from .physical import (
     CameraFrame,
     CandidatePlan,
     ClarificationResult,
+    ConfirmedPlanChangedError,
     ContactEstimate,
     ControlReport,
     DetectedObject,
     DialogueTurn,
+    EmergencyStopResult,
     FailureReport,
     FeedbackReport,
     FinalPlan,
@@ -35,6 +48,7 @@ from .physical import (
     OutcomeReport,
     PhysicalAI,
     PhysicalAIResult,
+    PipelineEvent,
     PlanStep,
     PolicyPlan,
     PredictedState,
@@ -42,6 +56,8 @@ from .physical import (
     RewardScore,
     RobotState,
     SafetyAssessment,
+    SceneChangedError,
+    SceneRevalidationReport,
     SimulationOutcome,
     SlipEstimate,
     TactileSample,
@@ -49,7 +65,9 @@ from .physical import (
     WorldModelPrediction,
     WorldState,
     capture_frames,
+    is_emergency_stop_command,
     policy_routing_text,
+    validate_pre_execution_scene,
 )
 from .pi import PiRuntimeProfile, inspect_host
 from .robot_config import (
@@ -88,6 +106,7 @@ __all__ = [
     "CameraFrame",
     "CandidatePlan",
     "ClarificationResult",
+    "ConfirmedPlanChangedError",
     "ContactEstimate",
     "ComponentDecision",
     "ComponentRegistry",
@@ -95,6 +114,7 @@ __all__ = [
     "ControlReport",
     "DetectedObject",
     "DialogueTurn",
+    "EmergencyStopResult",
     "EmbeddingRouter",
     "Expert",
     "ExpertRegistry",
@@ -107,21 +127,27 @@ __all__ = [
     "GraspStability",
     "GroundedIntent",
     "HybridRouter",
+    "HumanAwarePhysicalSession",
+    "HumanInteractionPolicy",
     "InMemoryServer",
     "MoIRA",
     "OpenCVCameraSource",
     "Layer",
     "LoadEstimate",
+    "LanCameraSource",
+    "load_runtime_environment",
     "MotionTrajectory",
     "OutcomeReport",
     "PCA9685ArmDriver",
     "PCA9685Config",
     "PCA9685PulseDevice",
+    "PipelineEvent",
     "PhysicalAI",
     "PhysicalAIResult",
     "PhysicalSession",
     "PiRuntimeProfile",
     "PlanStep",
+    "PlanProposal",
     "PolicyPlan",
     "PredictionErrorReport",
     "PredictedState",
@@ -137,14 +163,18 @@ __all__ = [
     "RobotModel",
     "ServoCalibration",
     "SafetyAssessment",
+    "SceneChangedError",
+    "SceneRevalidationReport",
     "SimulationOutcome",
     "SlipEstimate",
+    "SpokenEmergencyStopMonitor",
     "TactileSample",
     "ThreeMFReport",
     "TaskRequest",
     "WorldState",
     "WorldModelPrediction",
     "capture_frames",
+    "is_emergency_stop_command",
     "JsonlRunJournal",
     "inspect_host",
     "inspect_3mf",
@@ -154,5 +184,6 @@ __all__ = [
     "pca9685_installed_arm_drivers",
     "policy_routing_text",
     "robot_bound_local_factories",
+    "validate_pre_execution_scene",
     "AdafruitPCA9685Device",
 ]

@@ -1,3 +1,4 @@
+import ast
 import asyncio
 import importlib.util
 import sys
@@ -12,8 +13,10 @@ class Vector(tuple):
 
 
 class FakeEncoder:
-    def __init__(self, model_id, *, device):
+    def __init__(self, model_id, *, device, cache_folder, local_files_only):
         self.model_id, self.device = model_id, device
+        assert cache_folder == "/app/moira-router-models"
+        assert local_files_only is True
 
     def encode(self, texts, **options):
         assert options == {"normalize_embeddings": True, "convert_to_numpy": True}
@@ -38,11 +41,39 @@ def load_deployment_module(monkeypatch):
     chains.ChainletBase = ChainletBase
     chains.RemoteConfig = Configuration
     chains.DockerImage = Configuration
+    chains.ChainletOptions = Configuration
     chains.make_abs_path_here = lambda value: value
     chains.mark_entrypoint = lambda value: value
+    pydantic = ModuleType("pydantic")
+
+    class BaseModel:
+        def __init__(self, **values):
+            for key, value in values.items():
+                setattr(self, key, value)
+            annotations = getattr(type(self), "__annotations__", {})
+            for key in annotations:
+                if not hasattr(self, key):
+                    setattr(self, key, getattr(type(self), key, None))
+
+        def model_dump(self):
+            def convert(value):
+                if isinstance(value, BaseModel):
+                    return value.model_dump()
+                if isinstance(value, list):
+                    return [convert(item) for item in value]
+                return value
+
+            return {
+                key: convert(getattr(self, key))
+                for key in getattr(type(self), "__annotations__", {})
+            }
+
+    pydantic.BaseModel = BaseModel
+    pydantic.ConfigDict = lambda **values: values
     sentence_transformers = ModuleType("sentence_transformers")
     sentence_transformers.SentenceTransformer = FakeEncoder
     monkeypatch.setitem(sys.modules, "truss_chains", chains)
+    monkeypatch.setitem(sys.modules, "pydantic", pydantic)
     monkeypatch.setitem(sys.modules, "sentence_transformers", sentence_transformers)
 
     spec = importlib.util.spec_from_file_location(
@@ -62,10 +93,10 @@ def test_deployable_router_semantically_ranks_only_allowed_specialists(monkeypat
         router.run_remote(
             "manipulation",
             "manipulation.select_compatible",
-            {"routing_text": "Coordinate two arms to lift this together"},
+            module.RouterContext(routing_text="Coordinate two arms to lift this together"),
             ["baseten-waypoint-policy", "baseten-bimanual-act"],
         )
-    )
+    ).model_dump()
 
     assert result["component_id"] == "baseten-bimanual-act"
     assert result["strategy"] == "minilm_prototype_cosine"
@@ -80,8 +111,10 @@ def test_deployable_router_has_no_hidden_substitution(monkeypatch):
     router = module.PhysicalComponentRouter()
 
     singleton = asyncio.run(
-        router.run_remote("control", "control.single_arm", {}, ["edge-hardware"])
-    )
+        router.run_remote(
+            "control", "control.single_arm", module.RouterContext(), ["edge-hardware"]
+        )
+    ).model_dump()
     assert singleton["component_id"] == "edge-hardware"
     assert singleton["strategy"] == "contract_singleton"
 
@@ -90,7 +123,17 @@ def test_deployable_router_has_no_hidden_substitution(monkeypatch):
             router.run_remote(
                 "manipulation",
                 "manipulation.select_compatible",
-                {"routing_text": "pick up the object"},
+                module.RouterContext(routing_text="pick up the object"),
                 ["baseten-waypoint-policy", "unregistered-policy"],
             )
         )
+
+
+def test_router_keeps_runtime_types_for_truss_chain_validation():
+    module = ast.parse(open("deploy/baseten_router/router.py", encoding="utf-8").read())
+    assert not any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "__future__"
+        and any(alias.name == "annotations" for alias in node.names)
+        for node in module.body
+    )

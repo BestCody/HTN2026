@@ -135,6 +135,7 @@ def decode_physical_response(response: Any, request: Any) -> Any:
             value["transcript"],
             value["action"],
             tuple(value.get("target_object_ids", ())),
+            value.get("object_roles", {}),
             tuple(value.get("constraints", ())),
             value.get("needs_clarification", False),
             value.get("clarification_question"),

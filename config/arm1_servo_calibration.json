@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "robot_model_id": "three-actuator-desktop-arm-v2",
+  "robot_source_sha256": "bc5ad54ea950fa068b1c95d26e907497d43277aab97aa67eb58ef610bfd86df5",
+  "arm": "left",
+  "physical_id": "arm_1",
+  "captured_at": null,
+  "controller": {
+    "i2c_address": null,
+    "reference_clock_hz": null,
+    "pwm_frequency_hz": null,
+    "servo_model_voltage_validated": false,
+    "servo_power_validated": false,
+    "output_enable_validated": false
+  },
+  "joints": {
+    "J1_BASE_YAW": {
+      "channel": 0,
+      "lower_deg": null,
+      "upper_deg": null,
+      "home_deg": null,
+      "max_velocity_deg_s": null,
+      "pulse_at_lower_us": null,
+      "pulse_at_upper_us": null
+    },
+    "J2_SHOULDER": {
+      "channel": 1,
+      "lower_deg": null,
+      "upper_deg": null,
+      "home_deg": null,
+      "max_velocity_deg_s": null,
+      "pulse_at_lower_us": null,
+      "pulse_at_upper_us": null
+    },
+    "J3_GRIPPER": {
+      "channel": 3,
+      "lower_deg": null,
+      "upper_deg": null,
+      "home_deg": null,
+      "max_velocity_deg_s": null,
+      "pulse_at_lower_us": null,
+      "pulse_at_upper_us": null
+    }
+  },
+  "notes": [
+    "Raw servo-command observations are in config/arm1_servo_observations.json.",
+    "Do not copy servo command degrees into physical joint-angle or PWM fields."
+  ]
+}

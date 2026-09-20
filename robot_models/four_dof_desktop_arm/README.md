@@ -125,3 +125,44 @@ before connecting the servo rail. Then record:
 The second arm can use the same model profile with its own channel and pulse
 calibration. Bimanual hardware remains disabled until both installations are
 present and the measured shoulder spacing is recorded.
+
+## Calibration and training records
+
+The checked-in [`config/arm1_servo_calibration.json`](../../config/arm1_servo_calibration.json)
+is prefilled with the confirmed channels and leaves every measured value null.
+Fill it only with observed values. A completed record is schema-checked against
+the robot ID, CAD hash, installed physical arm, channel map, PWM period, joint
+limits, home positions, speed, voltage compatibility, power test, and stop test.
+
+Apply it atomically to both model copies with:
+
+```powershell
+.\.venv\Scripts\moira.exe servo-calibration-apply `
+  .\robot_models\four_dof_desktop_arm\model.json `
+  .\config\arm1_servo_calibration.json `
+  --output .\robot_models\four_dof_desktop_arm\model.json `
+  --packaged-output .\src\moira\data\four_dof_desktop_arm.json
+```
+
+This command records the calibration hash and still leaves physical output
+disabled when collision, payload, workspace, or other safety inputs are absent.
+
+The CO6 record is in
+[`config/co6_camera_calibration.json`](../../config/co6_camera_calibration.json).
+After both calibration files are complete, `episode-dataset-init` creates an
+immutable-lineage training dataset. Each published episode contains monotonic
+timestamps, hashed camera frames, synchronized robot states and actions, a
+train/validation/test split, and the exact robot, servo, and camera hashes.
+
+The dynamics form is in
+[`config/simulation_training.json`](../../config/simulation_training.json).
+Check what still blocks physics rollout generation with:
+
+```powershell
+.\.venv\Scripts\moira.exe simulation-training-preflight `
+  .\robot_models\four_dof_desktop_arm\model.json `
+  .\robot_models\four_dof_desktop_arm\kinematic_validation.xml `
+  --servo-calibration .\config\arm1_servo_calibration.json `
+  --camera-calibration .\config\co6_camera_calibration.json `
+  --simulation-config .\config\simulation_training.json
+```

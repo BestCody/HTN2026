@@ -372,7 +372,14 @@ def run_edge_demo(memory_path: str | Path | None = None) -> EdgeDemoResult:
                 "sam",
                 (frame,),
                 instruction="Bring me the mug",
-                workspace={"room": "kitchen", "minimum_clearance_m": 0.10},
+                workspace={
+                    "room": "kitchen",
+                    "minimum_clearance_m": 0.10,
+                    "human_error_policy": {
+                        "max_pre_execution_target_drift_m": 0.02,
+                        "monitor_scene_between_steps": True,
+                    },
+                },
                 tactile_samples=(
                     TactileSample("left", time(), 0.45, 0.04),
                     TactileSample("right", time(), 0.47, 0.04),
@@ -387,8 +394,10 @@ def run_edge_demo(memory_path: str | Path | None = None) -> EdgeDemoResult:
                     time(),
                 ),
                 execute=True,
+                execution_confirmed=True,
                 speak=True,
             ),
+            pre_action_capture=lambda: (frame,),
             post_action_capture=lambda: (frame,),
         )
         return EdgeDemoResult(

@@ -1,13 +1,13 @@
-# MoIRA Physical AI Router
+﻿# MoIRA Physical AI Router
 
-This repository is an OpenRouter-style gateway for physical AI. A Raspberry Pi
-4B captures sensors and owns the local safety/control boundary, while a remote
-router selects exact specialized components for perception, scene-grounded
-voice NLP, 6-DoF grasping, task planning, robot-specific manipulation policies,
-structured world prediction, outcome verification, and speech. Baseten can host
-those models independently. Personal memory, inverse kinematics, trajectories,
-collision checks, tactile reflexes, hard safety, feedback, and bimanual hardware
-control remain on the Pi.
+This repository is an OpenRouter-style gateway for physical AI. The RTX laptop
+is the robot's brain: it captures the CO6 webcam and microphone, stores personal
+memory, routes exact specialist contracts, plans actions, and evaluates parallel
+2-3 second predictions. Baseten can host those specialists independently. The
+Raspberry Pi 4B is the robot computer. It has no cloud credentials and accepts
+only authenticated, bounded motion chunks that match its calibrated robot model.
+It independently enforces command identity, timing, joint and gripper envelopes,
+owns the PCA9685, and keeps the emergency stop local to the motors.
 
 The production component path does not substitute a different model after a
 router or inference failure. It stops before motor execution and reports the
@@ -43,26 +43,25 @@ directly with:
 .\.venv-training\Scripts\python.exe tools\verify_training_env.py
 ```
 
-## Raspberry Pi quick start
+## Software-only quick start
 
-On 64-bit Raspberry Pi OS with Python 3.10+, run from the repository root:
+On the laptop, run the deterministic non-actuating integration path from the
+repository root:
 
 ```bash
-python3 -m venv .venv
-./.venv/bin/python -m pip install -e ".[camera,hardware]"
-./.venv/bin/moira pi-check --strict
-./.venv/bin/moira physical-demo
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[camera]"
+.\.venv\Scripts\python.exe -m moira physical-demo
 ```
 
-For development on Windows PowerShell, use `.\.venv\Scripts\python.exe` in
-place of `./.venv/bin/python`; omit `--strict` on a non-Pi host.
 `physical-demo` exercises camera objects, persistent personal context, a
 2.5-second structured prediction horizon, grasp generation, single-arm and
 bimanual policies, four world-model specialists, reward/risk scoring, local IK,
 validated action chunks, tactile sensing, execution feedback, and voice output
 without commanding hardware. See the
-[Pi 4B + Baseten architecture](docs/pi4-baseten-architecture.md) for production
-wiring and deployment contracts.
+[Pi 4B + Baseten architecture](docs/pi4-baseten-architecture.md) for laptop/Pi
+wiring and deployment contracts. The Pi installation is intentionally smaller
+and is documented under **Pi bring-up** in that guide.
 
 ## Live physical workflow
 
@@ -81,24 +80,25 @@ Check the complete path at any time:
 
 The report names every missing CAD, calibration, camera, router, and specialist
 input without printing the Baseten API key. After those inputs are ready, run a
-plan-only task from a prerecorded command:
+plan-only task from a prerecorded command. `MOIRA_CAMERA_DEVICE` must be the
+OpenCV device index or path verified for the CO6; the runtime never assumes
+index 0 because that is commonly the laptop's integrated camera:
 
 ```powershell
 .\.venv\Scripts\python.exe -m moira physical-run `
   --audio .\command.wav `
-  --camera 0 `
   --workspace .\workspace.json
 ```
 
-On the Raspberry Pi, `--record-seconds 5` records a live ALSA WAV command in
-place of `--audio`. Add `--execute --robot-state robot-state.json` only after
-the exported robot model and PCA9685 calibration pass preflight. Physical
-execution requires a timestamped state observation and a post-action camera
-capture. The program does not initialize I2C for plan-only requests.
+Add `--execute --robot-state robot-state.json` only after the exported robot
+model and PCA9685 calibration pass preflight. Physical execution requires a
+timestamped state observation and a post-action camera capture. The laptop does
+not send a robot command during plan-only requests, and the Pi opens I2C lazily
+only after motion has been explicitly enabled.
 
 Each attempt is appended to `outputs/physical_runs.jsonl`. A successful record
 contains the transcript, recalled personal context, exact routed specialists,
-all candidate plans, parallel 2–3 second predictions, selected plan, control
+all candidate plans, parallel 2â€“3 second predictions, selected plan, control
 telemetry, before/after scene states, verified outcome, per-model prediction
 error, and feedback. Camera and audio payload bytes are excluded from the
 journal; their sizes and capture metadata are retained.
@@ -149,28 +149,129 @@ Cloud clients load `.env` from the current working directory. An existing
 `MOIRA_ENV_FILE` when launching outside the repository and the secret file is
 stored elsewhere. Never commit `.env`.
 
-### Deploy the speech-to-text specialist
-
-The repository includes a Whisper Large V3 Turbo Truss fixed to the Baseten
-`L4:4x16` instance that is available to this workspace. From the repository
-root:
+Inspect the configured IDs and their live Baseten deployment state without
+printing credentials or entity IDs:
 
 ```powershell
-py -3.12 -m venv .venv-deploy
-.\.venv-deploy\Scripts\python.exe -m pip install --upgrade pip truss==0.18.30
-.\.venv-deploy\Scripts\truss.exe login --browser
-.\.venv-deploy\Scripts\truss.exe push deploy\baseten_whisper --watch
+.\.venv\Scripts\moira.exe baseten-status
 ```
 
-After the development deployment is ready, set `BASETEN_STT_MODEL_ID` in the
-ignored `.env` file and test a real command recording:
+The complete component order, readiness state, and smoke tests are in the
+[Baseten deployment runbook](docs/baseten-deployment-runbook.md).
+
+### Run the laptop robot services
+
+The Pi is the robot computer and retains all motor authority. The RTX laptop
+runs MoIRA orchestration, the router and model clients, the CO6 webcam, Whisper
+Large V3 Turbo, and Kokoro. Install the pinned voice dependencies in the CUDA
+training environment, then start the laptop-local voice service:
 
 ```powershell
-.\.venv\Scripts\python.exe tools\test_baseten_stt.py path\to\command.wav
+.\.venv-training\Scripts\python.exe -m pip install -e ".[rtx-voice]"
+.\.venv-training\Scripts\python.exe tools\run_rtx_voice_server.py `
+  --host 127.0.0.1 `
+  --port 8765
 ```
 
-See `deploy/baseten_whisper/README.md` for the endpoint contract and deployment
-details.
+The Pi exposes only an authenticated robot-control service. It starts locked,
+does not initialize the PCA9685, and rejects every motion request until the
+calibrated model has been deployed and `--enable-motion` is deliberately added:
+
+```bash
+MOIRA_ROBOT_TOKEN='replace-with-the-shared-secret' \
+./.venv/bin/moira-pi-controller \
+  --host 0.0.0.0 \
+  --port 8770 \
+  --model /home/client/moira-controller/app/robot_models/four_dof_desktop_arm/model.json
+```
+
+Put the Pi and laptop on the same Wi-Fi and set the ignored laptop `.env`:
+
+```dotenv
+MOIRA_ROBOT_URL=http://RASPBERRY_PI_IPV4:8770
+MOIRA_ROBOT_TOKEN=the-same-shared-secret
+MOIRA_STT_URL=http://127.0.0.1:8765/v1/stt
+MOIRA_TTS_URL=http://127.0.0.1:8765/v1/tts
+MOIRA_CAMERA_DEVICE=the-verified-co6-opencv-index-or-path
+```
+
+Run the complete brain on the laptop. The Pi revalidates robot identity,
+geometry digest, plan/chunk binding, timing, joint limits, gripper limits, and
+request uniqueness before local PWM is possible:
+
+```powershell
+.\.venv-training\Scripts\python.exe -m moira physical-run `
+  --config .\config\pi4_runtime.json `
+  --instruction "move the red block to the blue tray" `
+  --camera-id co6-usb
+```
+
+The checkpoints and revisions are pinned in `src/moira/rtx_voice.py`; CUDA is
+mandatory and CPU substitution is rejected. Test a command recording through
+the same LAN contract used by the Pi:
+
+```powershell
+.\.venv-training\Scripts\python.exe tools\test_baseten_stt.py path\to\command.wav
+```
+
+Vision and scene-grounded language use the GLM-5.3-Flash Baseten Model API.
+The frozen MiniLM Router and deterministic Planner remain Baseten Chains.
+For a judge-facing run, print every actual specialist route, model switch,
+candidate simulation, score, and final selection as the pipeline executes. The
+presentation includes animated model spinners, routing-decision reveals,
+physics score bars, safety callouts, and a final candidate comparison table:
+
+```powershell
+.\.venv-training\Scripts\python.exe tools\run_judge_demo.py --play-response
+```
+
+To demonstrate recovery from an incomplete human command, run:
+
+```powershell
+.\.venv-training\Scripts\python.exe tools\run_judge_demo.py --human-error-demo --play-response
+```
+
+This path intentionally says only â€œMove the red block.â€ The robot asks for the
+missing destination, accepts a second spoken answer, carries the active dialogue
+into scene grounding, replans, and displays the selected specialists and futures.
+Motor output remains locked. Stored personal comments may adjust preferences and
+accommodations, but they cannot silently supply a target that the user did not
+name in the current conversation.
+
+Maximize the PowerShell or Windows Terminal window before starting so the
+presentation panels stay on one line.
+
+The command ends by playing the Kokoro response and saving it to
+`outputs/judge_demo_response.wav`. The trace clearly labels this
+pre-calibration profile as motor-locked; it cannot send PWM commands. It uses
+the controlled scene and spoken-command fixtures from
+`config/software_integration.json` so the judge demonstration is reproducible.
+Run it once a few minutes before presenting to warm the Router and Planner
+Chains. The verified warm run completes in about ten seconds; a scaled-down
+cloud Chain can take substantially longer on its first request.
+
+To run the same complete non-actuating integration as a compact JSON check:
+
+```powershell
+.\.venv-training\Scripts\python.exe tools\run_software_integration.py
+```
+
+This profile uses explicit, nonphysical assumptions for untrained robot models
+and can never authorize motor execution. A pass proves service composition,
+routing, typed planning, parallel 2.5-second predictions, selection, planned
+outcome handling, feedback journaling, and spoken response generation.
+
+Physical execution uses a separate human-aware session. It previews the plan,
+echoes the interpreted command, and requires a fresh `yes` bound to the exact
+grounded intent and candidate. Corrections invalidate the pending plan and run
+grounding, routing, planning, and prediction again. If fresh planning differs
+from what was confirmed, execution is blocked and a new confirmation is
+required. A local stop phrase bypasses cloud inference, stops every loaded arm,
+and latches the PCA9685 controller. During an authorized Pi execution, a
+parallel one-second microphone monitor listens for stop language and fails
+closed if its recorder or STT component fails. Immediately before motor
+authority, and again between action steps, fresh camera observations block
+missing or unexpectedly moved targets and newly observed hazards.
 
 ## General semantic routing with typed compatibility
 
@@ -219,8 +320,9 @@ The physical path uses these exact capability groups:
 Every candidate policy is converted to a local joint trajectory before remote
 prediction. Relevant world models predict typed future object poses, joints,
 contact forces, slip, collision probability, success, and uncertainty through
-the configured 2–3 second horizon. A reward model scores progress; the Pi-side
-safety component applies hard limits. The task planner can select only a
+the configured 2â€“3 second horizon. A reward model scores progress; laptop safety
+fusion rejects unsafe plans and the Pi reapplies calibrated motion envelopes
+before it can drive PWM. The task planner can select only a
 candidate that was generated, validated, predicted, and marked safe. After
 execution, predicted success is compared with the observed outcome per world
 model so calibration errors can be persisted for retraining.
@@ -469,7 +571,7 @@ chunks in the policy wrapper. Run each required seed/trajectory separately.
 The implementation follows section 3's external text routing, simple/abstract
 descriptions, and episodic expert execution. It includes all three serving
 regimes and the routing F1, joint MSE, and rollout success metrics. The paper
-trains GR00T-N1 embodiment specialists for 5,000 steps and π₀ LIBERO specialists
+trains GR00T-N1 embodiment specialists for 5,000 steps and Ï€â‚€ LIBERO specialists
 for 30,000 steps. Its evaluation uses robot datasets, checkpoints, and simulator
 configurations absent from this repository. See the
 [paper's methods](https://arxiv.org/html/2507.01843v2#S3) for the experimental protocol
@@ -521,3 +623,4 @@ Implementation API references:
 [Sentence Transformers](https://github.com/huggingface/sentence-transformers),
 [Transformers chat templates](https://huggingface.co/docs/transformers/chat_templating),
 [PEFT LoRA](https://huggingface.co/docs/peft/package_reference/lora).
+

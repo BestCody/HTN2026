@@ -1,35 +1,413 @@
 {
   "components": [
-    {"id":"baseten-vision-scene","layer":"perception","capabilities":["perception.scene"],"model":"DEPLOYMENT:vision-object-depth-pose","runtime":"remote","estimated_ram_mb":12,"priority":20,"max_concurrency":1,"pi_compatible":true},
-    {"id":"baseten-grasp-pose","layer":"grasp","capabilities":["grasp.pose_6d"],"model":"DEPLOYMENT:graspnet-6d-pose","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":1,"pi_compatible":true},
-    {"id":"sqlite-personal-memory","layer":"personal","capabilities":["personal.recall","personal.record"],"model":"sqlite-personal-memory-v1","runtime":"local","estimated_ram_mb":8,"priority":20,"max_concurrency":1,"pi_compatible":true},
-    {"id":"baseten-stt","layer":"voice","capabilities":["voice.transcribe"],"model":"DEPLOYMENT:speech-to-text","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":1,"pi_compatible":true},
-    {"id":"baseten-voice-nlp","layer":"voice","capabilities":["voice.ground"],"model":"DEPLOYMENT:scene-grounded-voice-nlp","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":1,"pi_compatible":true},
-    {"id":"baseten-tts","layer":"voice","capabilities":["voice.synthesize"],"model":"DEPLOYMENT:text-to-speech","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":1,"pi_compatible":true},
-    {"id":"baseten-task-planner","layer":"planning","capabilities":["planning.candidates","planning.select"],"model":"CHAIN:personalized-task-planner","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":2,"pi_compatible":true},
-    {"id":"baseten-waypoint-policy","layer":"manipulation","capabilities":["manipulation.skill.waypoint"],"model":"DEPLOYMENT:waypoint-manipulation-policy","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":2,"pi_compatible":true},
-    {"id":"baseten-bimanual-act","layer":"manipulation","capabilities":["manipulation.bimanual"],"model":"DEPLOYMENT:robot-specific-bimanual-act","runtime":"remote","estimated_ram_mb":8,"priority":30,"max_concurrency":2,"pi_compatible":true},
-    {"id":"baseten-pour-policy","layer":"manipulation","capabilities":["manipulation.skill.pour"],"model":"DEPLOYMENT:diffusion-policy-pour","runtime":"remote","estimated_ram_mb":8,"priority":30,"max_concurrency":1,"pi_compatible":true},
-    {"id":"baseten-insert-policy","layer":"manipulation","capabilities":["manipulation.skill.insert"],"model":"DEPLOYMENT:diffusion-policy-insert","runtime":"remote","estimated_ram_mb":8,"priority":30,"max_concurrency":1,"pi_compatible":true},
-    {"id":"baseten-open-lid-policy","layer":"manipulation","capabilities":["manipulation.skill.open_lid"],"model":"DEPLOYMENT:diffusion-policy-open-lid","runtime":"remote","estimated_ram_mb":8,"priority":30,"max_concurrency":1,"pi_compatible":true},
-    {"id":"baseten-handover-policy","layer":"manipulation","capabilities":["manipulation.skill.handover"],"model":"DEPLOYMENT:human-aware-handover-policy","runtime":"remote","estimated_ram_mb":8,"priority":30,"max_concurrency":1,"pi_compatible":true},
-    {"id":"local-bimanual-ik","layer":"kinematics","capabilities":["kinematics.inverse"],"model":"ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json","runtime":"local","estimated_ram_mb":12,"priority":100,"max_concurrency":2,"pi_compatible":true},
-    {"id":"local-trajectory-planner","layer":"motion","capabilities":["motion.trajectory"],"model":"ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json","runtime":"local","estimated_ram_mb":16,"priority":100,"max_concurrency":2,"pi_compatible":true},
-    {"id":"local-collision-checker","layer":"motion","capabilities":["motion.collision_check"],"model":"ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json","runtime":"local","estimated_ram_mb":24,"priority":100,"max_concurrency":2,"pi_compatible":true},
-    {"id":"baseten-forward-dynamics","layer":"dynamics","capabilities":["dynamics.predict"],"model":"DEPLOYMENT:learned-forward-dynamics","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":2,"pi_compatible":true},
-    {"id":"baseten-rigid-world","layer":"world","capabilities":["world.rigid_dynamics"],"model":"DEPLOYMENT:rigid-body-state-world-model","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":2,"pi_compatible":true},
-    {"id":"baseten-grasp-contact-world","layer":"world","capabilities":["world.grasp_contact"],"model":"DEPLOYMENT:grasp-contact-world-model","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":2,"pi_compatible":true},
-    {"id":"baseten-bimanual-world","layer":"world","capabilities":["world.bimanual_coordination"],"model":"DEPLOYMENT:bimanual-coordination-world-model","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":2,"pi_compatible":true},
-    {"id":"baseten-deformable-world","layer":"world","capabilities":["world.deformable_dynamics"],"model":"DEPLOYMENT:deformable-liquid-world-model","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":1,"pi_compatible":true},
-    {"id":"baseten-human-motion-world","layer":"world","capabilities":["world.human_motion"],"model":"DEPLOYMENT:short-horizon-human-motion","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":1,"pi_compatible":true},
-    {"id":"baseten-task-reward","layer":"reward","capabilities":["reward.task_progress"],"model":"DEPLOYMENT:model-based-task-reward","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":2,"pi_compatible":true},
-    {"id":"local-safety-risk","layer":"safety","capabilities":["safety.risk"],"model":"ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json","runtime":"local","estimated_ram_mb":8,"priority":100,"max_concurrency":2,"pi_compatible":true},
-    {"id":"local-tactile-signal","layer":"tactile","capabilities":["tactile.contact","tactile.slip","tactile.force","tactile.grasp_stability"],"model":"bounded-tactile-signal-v1","runtime":"local","estimated_ram_mb":4,"priority":100,"max_concurrency":1,"pi_compatible":true},
-    {"id":"dual-arm-hardware","layer":"control","capabilities":["control.single_arm","control.bimanual"],"model":"ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json","runtime":"hardware","estimated_ram_mb":4,"priority":100,"max_concurrency":1,"pi_compatible":true},
-    {"id":"baseten-outcome-verifier","layer":"outcome","capabilities":["outcome.verify"],"model":"DEPLOYMENT:physical-outcome-verifier","runtime":"remote","estimated_ram_mb":8,"priority":20,"max_concurrency":1,"pi_compatible":true},
-    {"id":"local-failure-classifier","layer":"failure","capabilities":["failure.classify"],"model":"ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json","runtime":"local","estimated_ram_mb":8,"priority":100,"max_concurrency":1,"pi_compatible":true},
-    {"id":"local-load-estimator","layer":"load","capabilities":["load.estimate"],"model":"local-load-cell-regression-v1","runtime":"local","estimated_ram_mb":4,"priority":100,"max_concurrency":1,"pi_compatible":true},
-    {"id":"local-prediction-error","layer":"feedback","capabilities":["feedback.prediction_error"],"model":"local-world-model-calibration-v1","runtime":"local","estimated_ram_mb":4,"priority":100,"max_concurrency":1,"pi_compatible":true},
-    {"id":"local-load-feedback","layer":"feedback","capabilities":["feedback.learn"],"model":"ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json","runtime":"local","estimated_ram_mb":4,"priority":20,"max_concurrency":1,"pi_compatible":true}
+    {
+      "id": "baseten-vision-scene",
+      "layer": "perception",
+      "capabilities": [
+        "perception.scene"
+      ],
+      "model": "MODEL_API:zai-org/GLM-5.3-Flash",
+      "runtime": "remote",
+      "estimated_ram_mb": 12,
+      "priority": 20,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-grasp-pose",
+      "layer": "grasp",
+      "capabilities": [
+        "grasp.pose_6d"
+      ],
+      "model": "LAN:trained-6d-grasp-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "sqlite-personal-memory",
+      "layer": "personal",
+      "capabilities": [
+        "personal.recall",
+        "personal.record"
+      ],
+      "model": "sqlite-personal-memory-v1",
+      "runtime": "local",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-stt",
+      "layer": "voice",
+      "capabilities": [
+        "voice.transcribe"
+      ],
+      "model": "LAN:faster-whisper-large-v3-turbo",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-voice-nlp",
+      "layer": "voice",
+      "capabilities": [
+        "voice.ground"
+      ],
+      "model": "MODEL_API:zai-org/GLM-5.3-Flash",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-tts",
+      "layer": "voice",
+      "capabilities": [
+        "voice.synthesize"
+      ],
+      "model": "LAN:hexgrad/Kokoro-82M",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-task-planner",
+      "layer": "planning",
+      "capabilities": [
+        "planning.candidates",
+        "planning.select"
+      ],
+      "model": "CHAIN:deterministic-physical-task-planner",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-waypoint-policy",
+      "layer": "manipulation",
+      "capabilities": [
+        "manipulation.skill.waypoint"
+      ],
+      "model": "LAN:trained-waypoint-policy-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-bimanual-act",
+      "layer": "manipulation",
+      "capabilities": [
+        "manipulation.bimanual"
+      ],
+      "model": "LAN:trained-bimanual-policy-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 30,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-pour-policy",
+      "layer": "manipulation",
+      "capabilities": [
+        "manipulation.skill.pour"
+      ],
+      "model": "LAN:trained-pour-policy-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 30,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-insert-policy",
+      "layer": "manipulation",
+      "capabilities": [
+        "manipulation.skill.insert"
+      ],
+      "model": "LAN:trained-insert-policy-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 30,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-open-lid-policy",
+      "layer": "manipulation",
+      "capabilities": [
+        "manipulation.skill.open_lid"
+      ],
+      "model": "LAN:trained-open-lid-policy-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 30,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-handover-policy",
+      "layer": "manipulation",
+      "capabilities": [
+        "manipulation.skill.handover"
+      ],
+      "model": "LAN:trained-handover-policy-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 30,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "local-bimanual-ik",
+      "layer": "kinematics",
+      "capabilities": [
+        "kinematics.inverse"
+      ],
+      "model": "ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json",
+      "runtime": "local",
+      "estimated_ram_mb": 12,
+      "priority": 100,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "local-trajectory-planner",
+      "layer": "motion",
+      "capabilities": [
+        "motion.trajectory"
+      ],
+      "model": "ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json",
+      "runtime": "local",
+      "estimated_ram_mb": 16,
+      "priority": 100,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "local-collision-checker",
+      "layer": "motion",
+      "capabilities": [
+        "motion.collision_check"
+      ],
+      "model": "ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json",
+      "runtime": "local",
+      "estimated_ram_mb": 24,
+      "priority": 100,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-forward-dynamics",
+      "layer": "dynamics",
+      "capabilities": [
+        "dynamics.predict"
+      ],
+      "model": "LAN:trained-forward-dynamics-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-rigid-world",
+      "layer": "world",
+      "capabilities": [
+        "world.rigid_dynamics"
+      ],
+      "model": "LAN:calibrated-rigid-world-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-grasp-contact-world",
+      "layer": "world",
+      "capabilities": [
+        "world.grasp_contact"
+      ],
+      "model": "LAN:trained-grasp-contact-world-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-bimanual-world",
+      "layer": "world",
+      "capabilities": [
+        "world.bimanual_coordination"
+      ],
+      "model": "LAN:trained-bimanual-world-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-deformable-world",
+      "layer": "world",
+      "capabilities": [
+        "world.deformable_dynamics"
+      ],
+      "model": "LAN:trained-deformable-world-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-human-motion-world",
+      "layer": "world",
+      "capabilities": [
+        "world.human_motion"
+      ],
+      "model": "LAN:trained-human-motion-world-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-task-reward",
+      "layer": "reward",
+      "capabilities": [
+        "reward.task_progress"
+      ],
+      "model": "LAN:trained-task-reward-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "local-safety-risk",
+      "layer": "safety",
+      "capabilities": [
+        "safety.risk"
+      ],
+      "model": "ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json",
+      "runtime": "local",
+      "estimated_ram_mb": 8,
+      "priority": 100,
+      "max_concurrency": 2,
+      "pi_compatible": true
+    },
+    {
+      "id": "local-tactile-signal",
+      "layer": "tactile",
+      "capabilities": [
+        "tactile.contact",
+        "tactile.slip",
+        "tactile.force",
+        "tactile.grasp_stability"
+      ],
+      "model": "bounded-tactile-signal-v1",
+      "runtime": "local",
+      "estimated_ram_mb": 4,
+      "priority": 100,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "dual-arm-hardware",
+      "layer": "control",
+      "capabilities": [
+        "control.single_arm",
+        "control.bimanual"
+      ],
+      "model": "ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json",
+      "runtime": "hardware",
+      "estimated_ram_mb": 4,
+      "priority": 100,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "baseten-outcome-verifier",
+      "layer": "outcome",
+      "capabilities": [
+        "outcome.verify"
+      ],
+      "model": "LAN:trained-outcome-verifier-required",
+      "runtime": "remote",
+      "estimated_ram_mb": 8,
+      "priority": 20,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "local-failure-classifier",
+      "layer": "failure",
+      "capabilities": [
+        "failure.classify"
+      ],
+      "model": "ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json",
+      "runtime": "local",
+      "estimated_ram_mb": 8,
+      "priority": 100,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "local-load-estimator",
+      "layer": "load",
+      "capabilities": [
+        "load.estimate"
+      ],
+      "model": "local-load-cell-regression-v1",
+      "runtime": "local",
+      "estimated_ram_mb": 4,
+      "priority": 100,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "local-prediction-error",
+      "layer": "feedback",
+      "capabilities": [
+        "feedback.prediction_error"
+      ],
+      "model": "local-world-model-calibration-v1",
+      "runtime": "local",
+      "estimated_ram_mb": 4,
+      "priority": 100,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    },
+    {
+      "id": "local-load-feedback",
+      "layer": "feedback",
+      "capabilities": [
+        "feedback.learn"
+      ],
+      "model": "ROBOT_CONFIG:robot_models/four_dof_desktop_arm/model.json",
+      "runtime": "local",
+      "estimated_ram_mb": 4,
+      "priority": 20,
+      "max_concurrency": 1,
+      "pi_compatible": true
+    }
   ]
 }

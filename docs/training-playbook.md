@@ -16,8 +16,10 @@ The hardware profile for this plan is:
 - an external regulated 6 V, 10 A servo supply;
 - one monocular CO6! USB webcam fixed above and diagonally across the workspace;
 - an RTX 5070 Laptop GPU with 8 GB VRAM and 16 GB system RAM for training;
-- independently hosted specialist endpoints, with Baseten as the intended
-  deployment platform.
+- GLM-5.3-Flash Model API for scene semantics and grounded voice NLP;
+- Baseten CPU Chains for frozen MiniLM routing and deterministic planning;
+- the RTX 5070 LAN service for pinned Whisper Large V3 Turbo and Kokoro TTS;
+- independently hosted robot-specific endpoints after training.
 
 The lightweight `.venv` intentionally retains CPU-only PyTorch. The dedicated
 `.venv-training` environment is installed and verified with CUDA 12.8 PyTorch,
@@ -203,7 +205,7 @@ Work streams overlap where the dependency permits it.
 | --- | --- |
 | 0:00-1:00 | CUDA PyTorch works on the RTX 5070; MuJoCo and vision dependencies import; the physical demo task and success geometry are frozen. |
 | 0:30-2:00 | Fusion exports exact meshes, joint origins, link lengths, and mass data; arm #1 pulse endpoints, direction, home, safe speed, and stop path are measured. |
-| 1:00-3:00 | CO6! capture works on the Pi; stable device identity, camera calibration, tabletop transform, and synchronized frame timestamps are recorded. |
+| 1:00-3:00 | CO6! capture works on the RTX laptop; stable device identity, camera calibration, tabletop transform, and synchronized frame timestamps are recorded. |
 | 2:00-5:00 | Synthetic keypoint images, expert policy demonstrations, and randomized dynamics transitions are generated. Real keypoint frames and low-speed sweeps are recorded in parallel. |
 | 3:30-6:00 | Keypoint head, structured waypoint policy, and initial dynamics ensemble train on the RTX GPU. |
 | 5:30-8:00 | Held-out offline evaluation, checkpoint export, typed inference wrappers, and router registration complete. |
@@ -259,10 +261,11 @@ The GPU training environment is complete. Robot training still cannot begin
 without adding or completing:
 
 1. exact Fusion export and a valid MuJoCo digital twin;
-2. a UVC/V4L2 CO6! streaming source instead of the CSI-only `rpicam-still`
-   source;
-3. camera/workspace calibration storage and validation;
-4. synchronized episode recording and atomic dataset manifests;
+2. live integration between the implemented UVC/OpenCV CO6! source and episode
+   recorder;
+3. measured values for the implemented camera/workspace calibration record;
+4. laptop orchestration for the implemented synchronized, atomic episode
+   recorder, using Pi telemetry over the authenticated robot link;
 5. markerless keypoint dataset generation, labels, trainer, and inference;
 6. structured waypoint-policy dataset/trainer and inference wrapper;
 7. simulator/residual-dynamics dataset/trainer and inference wrapper;

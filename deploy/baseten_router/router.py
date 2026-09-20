@@ -3,16 +3,33 @@
 Deploy with: truss chains push router.py --promote
 """
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
-from typing import Any
 
 import truss_chains as chains
+from pydantic import BaseModel, ConfigDict
 
 MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL_CACHE = "/app/moira-router-models"
 CATALOG_PATH = Path(__file__).with_name("specialists.json")
+
+
+class RouterContext(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    routing_text: str | None = None
+
+
+class ComponentScore(BaseModel):
+    component_id: str
+    score: float
+
+
+class RouterResponse(BaseModel):
+    component_id: str
+    strategy: str
+    model: str | None
+    scores: list[ComponentScore]
 
 
 @chains.mark_entrypoint
@@ -27,6 +44,19 @@ class PhysicalComponentRouter(chains.ChainletBase):
     remote_config = chains.RemoteConfig(
         docker_image=chains.DockerImage(
             requirements_file=chains.make_abs_path_here("requirements.txt"),
+        ),
+        build_commands=[
+            "mkdir -p /app/moira-router-models && "
+            "SENTENCE_TRANSFORMERS_HOME=/app/moira-router-models "
+            "python -c \"from sentence_transformers import SentenceTransformer; "
+            "SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', "
+            "cache_folder='/app/moira-router-models')\""
+        ],
+        options=chains.ChainletOptions(
+            env_variables={
+                "HF_HUB_OFFLINE": "1",
+                "SENTENCE_TRANSFORMERS_HOME": MODEL_CACHE,
+            }
         ),
     )
 
@@ -59,15 +89,20 @@ class PhysicalComponentRouter(chains.ChainletBase):
             if expert_id in self._prototypes:
                 raise ValueError(f"Duplicate specialist ID: {expert_id}")
             self._prototypes[expert_id] = (description, *examples)
-        self._encoder = SentenceTransformer(MODEL_ID, device="cpu")
+        self._encoder = SentenceTransformer(
+            MODEL_ID,
+            device="cpu",
+            cache_folder=MODEL_CACHE,
+            local_files_only=True,
+        )
 
     async def run_remote(
         self,
         layer: str,
         capability: str,
-        context: dict[str, Any],
+        context: RouterContext,
         allowed_components: list[str],
-    ) -> dict[str, Any]:
+    ) -> RouterResponse:
         if not isinstance(layer, str) or not layer.strip():
             raise ValueError("layer must be a non-empty string")
         if not isinstance(capability, str) or not capability.startswith(f"{layer}."):
@@ -80,15 +115,13 @@ class PhysicalComponentRouter(chains.ChainletBase):
         ):
             raise ValueError("allowed_components must contain unique non-empty IDs")
         if len(allowed_components) == 1:
-            return {
-                "component_id": allowed_components[0],
-                "strategy": "contract_singleton",
-                "model": None,
-                "scores": [],
-            }
-        if not isinstance(context, dict):
-            raise ValueError("context must be an object")
-        routing_text = context.get("routing_text")
+            return RouterResponse(
+                component_id=allowed_components[0],
+                strategy="contract_singleton",
+                model=None,
+                scores=[],
+            )
+        routing_text = context.routing_text
         if not isinstance(routing_text, str) or not routing_text.strip():
             raise ValueError("routing_text is required when multiple specialists are compatible")
         missing = [item for item in allowed_components if item not in self._prototypes]
@@ -110,12 +143,12 @@ class PhysicalComponentRouter(chains.ChainletBase):
             scores.append(max(float(vector @ query) for vector in vectors[start:stop]))
             start = stop
         winner = max(range(len(scores)), key=scores.__getitem__)
-        return {
-            "component_id": allowed_components[winner],
-            "strategy": "minilm_prototype_cosine",
-            "model": MODEL_ID,
-            "scores": [
-                {"component_id": component_id, "score": score}
+        return RouterResponse(
+            component_id=allowed_components[winner],
+            strategy="minilm_prototype_cosine",
+            model=MODEL_ID,
+            scores=[
+                ComponentScore(component_id=component_id, score=score)
                 for component_id, score in zip(allowed_components, scores, strict=True)
             ],
-        }
+        )

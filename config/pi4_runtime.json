@@ -1,34 +1,45 @@
 {
   "schema_version": 1,
   "robot_model": "../robot_models/four_dof_desktop_arm/model.json",
+  "camera_calibration": "co6_camera_calibration.json",
   "component_manifest": "../examples/pi4_components.json",
   "memory_path": "../outputs/personal_memory.db",
   "journal_path": "../outputs/physical_runs.jsonl",
+  "camera": {
+    "transport": "opencv",
+    "camera_id": "co6-usb",
+    "device_env": "MOIRA_CAMERA_DEVICE"
+  },
+  "controller": {
+    "transport": "pi_http",
+    "url_env": "MOIRA_ROBOT_URL",
+    "token_env": "MOIRA_ROBOT_TOKEN"
+  },
   "router": {
     "id_env": "BASETEN_ROUTER_CHAIN_ID",
     "environment_env": "BASETEN_ROUTER_ENVIRONMENT",
     "default_environment": "development"
   },
   "remote_components": {
-    "baseten-vision-scene": {"id_env": "BASETEN_VISION_MODEL_ID", "entity": "model"},
-    "baseten-grasp-pose": {"id_env": "BASETEN_GRASP_MODEL_ID", "entity": "model"},
-    "baseten-stt": {"id_env": "BASETEN_STT_MODEL_ID", "entity": "model", "environment_env": "BASETEN_STT_ENVIRONMENT"},
-    "baseten-voice-nlp": {"id_env": "BASETEN_VOICE_NLP_MODEL_ID", "entity": "model"},
-    "baseten-tts": {"id_env": "BASETEN_TTS_MODEL_ID", "entity": "model"},
-    "baseten-task-planner": {"id_env": "BASETEN_PLANNER_CHAIN_ID", "entity": "chain"},
-    "baseten-waypoint-policy": {"id_env": "BASETEN_WAYPOINT_POLICY_MODEL_ID", "entity": "model"},
-    "baseten-bimanual-act": {"id_env": "BASETEN_BIMANUAL_POLICY_MODEL_ID", "entity": "model"},
-    "baseten-pour-policy": {"id_env": "BASETEN_POUR_POLICY_MODEL_ID", "entity": "model"},
-    "baseten-insert-policy": {"id_env": "BASETEN_INSERT_POLICY_MODEL_ID", "entity": "model"},
-    "baseten-open-lid-policy": {"id_env": "BASETEN_OPEN_LID_POLICY_MODEL_ID", "entity": "model"},
-    "baseten-handover-policy": {"id_env": "BASETEN_HANDOVER_POLICY_MODEL_ID", "entity": "model"},
-    "baseten-forward-dynamics": {"id_env": "BASETEN_DYNAMICS_MODEL_ID", "entity": "model"},
-    "baseten-rigid-world": {"id_env": "BASETEN_RIGID_WORLD_MODEL_ID", "entity": "model"},
-    "baseten-grasp-contact-world": {"id_env": "BASETEN_CONTACT_WORLD_MODEL_ID", "entity": "model"},
-    "baseten-bimanual-world": {"id_env": "BASETEN_BIMANUAL_WORLD_MODEL_ID", "entity": "model"},
-    "baseten-deformable-world": {"id_env": "BASETEN_DEFORMABLE_WORLD_MODEL_ID", "entity": "model"},
-    "baseten-human-motion-world": {"id_env": "BASETEN_HUMAN_WORLD_MODEL_ID", "entity": "model"},
-    "baseten-task-reward": {"id_env": "BASETEN_REWARD_MODEL_ID", "entity": "model"},
-    "baseten-outcome-verifier": {"id_env": "BASETEN_OUTCOME_MODEL_ID", "entity": "model"}
+    "baseten-vision-scene": {"transport": "baseten_model_api", "model_env": "BASETEN_VISION_MODEL_API", "default_model": "zai-org/GLM-5.3-Flash"},
+    "baseten-grasp-pose": {"transport": "json_http", "url_env": "MOIRA_GRASP_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-stt": {"transport": "json_http", "url_env": "MOIRA_STT_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-voice-nlp": {"transport": "baseten_model_api", "model_env": "BASETEN_VOICE_NLP_MODEL_API", "default_model": "zai-org/GLM-5.3-Flash"},
+    "baseten-tts": {"transport": "json_http", "url_env": "MOIRA_TTS_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-task-planner": {"transport": "baseten_deployment", "id_env": "BASETEN_PLANNER_CHAIN_ID", "entity": "chain", "environment_env": "BASETEN_PLANNER_ENVIRONMENT", "default_environment": "production"},
+    "baseten-waypoint-policy": {"transport": "json_http", "url_env": "MOIRA_WAYPOINT_POLICY_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-bimanual-act": {"transport": "json_http", "url_env": "MOIRA_BIMANUAL_POLICY_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-pour-policy": {"transport": "json_http", "url_env": "MOIRA_POUR_POLICY_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-insert-policy": {"transport": "json_http", "url_env": "MOIRA_INSERT_POLICY_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-open-lid-policy": {"transport": "json_http", "url_env": "MOIRA_OPEN_LID_POLICY_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-handover-policy": {"transport": "json_http", "url_env": "MOIRA_HANDOVER_POLICY_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-forward-dynamics": {"transport": "json_http", "url_env": "MOIRA_DYNAMICS_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-rigid-world": {"transport": "json_http", "url_env": "MOIRA_RIGID_WORLD_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-grasp-contact-world": {"transport": "json_http", "url_env": "MOIRA_CONTACT_WORLD_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-bimanual-world": {"transport": "json_http", "url_env": "MOIRA_BIMANUAL_WORLD_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-deformable-world": {"transport": "json_http", "url_env": "MOIRA_DEFORMABLE_WORLD_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-human-motion-world": {"transport": "json_http", "url_env": "MOIRA_HUMAN_WORLD_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-task-reward": {"transport": "json_http", "url_env": "MOIRA_REWARD_URL", "token_env": "MOIRA_LAN_TOKEN"},
+    "baseten-outcome-verifier": {"transport": "json_http", "url_env": "MOIRA_OUTCOME_URL", "token_env": "MOIRA_LAN_TOKEN"}
   }
 }
