@@ -10,7 +10,6 @@ Raspberry Pi 4B is the robot computer. It has no cloud credentials and accepts
 only authenticated, bounded motion chunks that match its calibrated robot model.
 It independently enforces command identity, timing, joint and gripper envelopes,
 owns the PCA9685, and keeps the emergency stop local to the motors.
->>>>>>> f7f28aea3fad0439208425ebc34359d94ff61156
 
 Baseten is Charlie's inference fabric. It hosts the semantic router and task
 planner as Chains, provides the multimodal Model API used for scene and language
