@@ -1,5 +1,7 @@
 ﻿# MoIRA Physical AI Router
 
+ Demo: https://youtube.com/shorts/cJ961L4WOBA
+
 This repository is an OpenRouter-style gateway for physical AI. The RTX laptop
 is the robot's brain: it captures the CO6 webcam and microphone, stores personal
 memory, routes exact specialist contracts, plans actions, and evaluates parallel
