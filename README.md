@@ -1,10 +1,23 @@
 # Charlie
 
+<<<<<<< HEAD
 Charlie is a safety-first physical AI system that turns a spoken request into a
 grounded, simulated, and locally validated robot action. Instead of asking one
 large model to do everything, Charlie coordinates specialized models for
 speech, vision, intent grounding, planning, manipulation, dynamics, reward,
 and outcome verification.
+=======
+ Demo: https://youtube.com/shorts/cJ961L4WOBA
+
+This repository is an OpenRouter-style gateway for physical AI. The RTX laptop
+is the robot's brain: it captures the CO6 webcam and microphone, stores personal
+memory, routes exact specialist contracts, plans actions, and evaluates parallel
+2-3 second predictions. Baseten can host those specialists independently. The
+Raspberry Pi 4B is the robot computer. It has no cloud credentials and accepts
+only authenticated, bounded motion chunks that match its calibrated robot model.
+It independently enforces command identity, timing, joint and gripper envelopes,
+owns the PCA9685, and keeps the emergency stop local to the motors.
+>>>>>>> f7f28aea3fad0439208425ebc34359d94ff61156
 
 Baseten is Charlie's inference fabric. It hosts the semantic router and task
 planner as Chains, provides the multimodal Model API used for scene and language
